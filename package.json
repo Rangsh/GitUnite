@@ -1,0 +1,54 @@
+{
+  "name": "gitunite",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "多平台代码仓库聚合分析工具 - 本地运行",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@vueuse/core": "^11.0.0",
+    "axios": "^1.7.0",
+    "dayjs": "^1.11.0",
+    "dexie": "^4.0.0",
+    "echarts": "^5.5.0",
+    "echarts-wordcloud": "^2.1.0",
+    "es-toolkit": "^1.0.0",
+    "html-to-image": "^1.11.0",
+    "lucide-vue-next": "^0.400.0",
+    "naive-ui": "^2.38.0",
+    "papaparse": "^5.4.0",
+    "pinia": "^2.2.0",
+    "vue": "^3.4.0",
+    "vue-echarts": "^7.0.0",
+    "vue-router": "^4.4.0"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^2.0.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "@vue/test-utils": "^2.4.0",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "postcss": "^8.4.0",
+    "prettier": "^3.3.0",
+    "simple-git-hooks": "^2.11.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.0",
+    "vue-tsc": "^2.1.10"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm lint-staged"
+  },
+  "lint-staged": {
+    "*": "eslint --fix"
+  }
+}
