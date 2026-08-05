@@ -57,3 +57,44 @@ export function normalizeLanguageMap(data: unknown): Record<string, number> {
   }
   return result
 }
+
+/** 规范化提交时间：Gitee 有时返回 `2024-01-01 12:00:00 +0800` 这类非严格 ISO */
+export function normalizeCommitDate(raw: string | null | undefined): string {
+  if (!raw || !raw.trim()) return ''
+  const s = raw.trim()
+  // 已是可被 Date 解析的 ISO
+  const direct = Date.parse(s)
+  if (!Number.isNaN(direct)) return new Date(direct).toISOString()
+
+  // `YYYY-MM-DD HH:mm:ss +0800` / `YYYY-MM-DD HH:mm:ss`
+  const m = s.match(
+    /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\s*([+-]\d{2}):?(\d{2})|Z)?/,
+  )
+  if (m) {
+    const [, date, time, oh, om] = m
+    const iso = oh != null
+      ? `${date}T${time}${oh}:${om ?? '00'}`
+      : `${date}T${time}Z`
+    const t = Date.parse(iso)
+    if (!Number.isNaN(t)) return new Date(t).toISOString()
+  }
+  return s
+}
+
+/** 判断提交是否属于指定用户（兼容 author.login 缺失、大小写不一致） */
+export function isCommitByUser(
+  commit: {
+    author?: { login?: string | null } | null
+    commit?: { author?: { name?: string | null, email?: string | null } | null }
+  },
+  userLogin: string,
+): boolean {
+  const login = userLogin.trim().toLowerCase()
+  if (!login) return false
+  const authorLogin = commit.author?.login?.trim().toLowerCase()
+  if (authorLogin && authorLogin === login) return true
+  // 部分 Gitee 提交 author 为 null，只在 commit.author.name 里带用户名
+  const name = commit.commit?.author?.name?.trim().toLowerCase()
+  if (name && name === login) return true
+  return false
+}

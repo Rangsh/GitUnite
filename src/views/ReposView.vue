@@ -121,8 +121,8 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
   <NSpace vertical size="large">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-semibold">仓库列表</h1>
-      <NButton type="primary" :loading="running" @click="start()">
-        {{ running ? '同步中…' : '一键同步' }}
+      <NButton type="primary" :loading="running" @click="filter === 'all' ? start() : start(filter)">
+        {{ running ? '同步中…' : filter === 'all' ? '一键同步' : `同步 ${filter === 'github' ? 'GitHub' : 'Gitee'}` }}
       </NButton>
     </div>
 

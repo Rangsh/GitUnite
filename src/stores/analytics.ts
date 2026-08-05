@@ -1,33 +1,70 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { markRaw, ref, shallowRef } from 'vue'
 import type { UnifiedCommit, UnifiedRepo } from '@/api/types'
+import { normalizeCommitDate } from '@/api/primaryLanguage'
 import { commitRepo, repoRepo, repoStatRepo } from '@/db/repositories'
 import type { RepoWeeklyStat } from '@/db/schema'
 
 /**
  * 分析看板的数据源：一次性把仓库、提交、周统计载入内存。
- * 50 仓库 / 5000 提交规模下，内存占用可接受；后续若需要可放 Web Worker。
+ * 大数组必须用 shallowRef + markRaw，避免深度代理卡死主线程。
  */
 export const useAnalyticsStore = defineStore('analytics', () => {
-  const repos = ref<UnifiedRepo[]>([])
-  const commits = ref<UnifiedCommit[]>([])
-  const repoStats = ref<RepoWeeklyStat[]>([])
+  const repos = shallowRef<UnifiedRepo[]>([])
+  const commits = shallowRef<UnifiedCommit[]>([])
+  const repoStats = shallowRef<RepoWeeklyStat[]>([])
   const loading = ref(false)
   const loadedAt = ref<number | null>(null)
 
+  let inflight: Promise<void> | null = null
+  let queuedForce = false
+
   async function load(force = false) {
-    if (loading.value) return
-    if (loadedAt.value && !force) return
-    loading.value = true
+    if (!force && loadedAt.value && !inflight) return
+
+    if (inflight) {
+      if (force) queuedForce = true
+      await inflight
+      if (queuedForce) {
+        queuedForce = false
+        await load(true)
+      }
+      return
+    }
+
+    // 有缓存时静默更新，避免进页/切换路由时全屏转圈像“自动刷新”
+    const initial = !loadedAt.value
+    if (initial) loading.value = true
+
+    inflight = doFetch()
+    try {
+      await inflight
+    }
+    finally {
+      inflight = null
+    }
+
+    if (queuedForce) {
+      queuedForce = false
+      await load(true)
+    }
+  }
+
+  async function doFetch() {
     try {
       const [r, c, s] = await Promise.all([
         repoRepo.all(),
         commitRepo.all(),
         repoStatRepo.all(),
       ])
-      repos.value = r
-      commits.value = c
-      repoStats.value = s
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      repos.value = markRaw(r)
+      // 纠正历史脏数据：非 ISO 日期会导致活跃度全部算空
+      commits.value = markRaw(c.map(commit => ({
+        ...commit,
+        authoredAt: normalizeCommitDate(commit.authoredAt) || commit.authoredAt,
+      })))
+      repoStats.value = markRaw(s)
       loadedAt.value = Date.now()
     }
     finally {
@@ -35,7 +72,6 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     }
   }
 
-  /** 同步完成后调用，强制重新载入。 */
   async function refresh() {
     await load(true)
   }

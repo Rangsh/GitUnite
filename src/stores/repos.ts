@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, markRaw, ref, shallowRef } from 'vue'
 import type { Platform, UnifiedRepo } from '@/api/types'
 import { db } from '@/db/schema'
 
@@ -15,14 +15,14 @@ async function aggregateCommitCounts(): Promise<Record<string, number>> {
 }
 
 export const useReposStore = defineStore('repos', () => {
-  const repos = ref<UnifiedRepo[]>([])
+  const repos = shallowRef<UnifiedRepo[]>([])
   const loading = ref(false)
   const filter = ref<RepoFilter>('all')
   const keyword = ref('')
   const language = ref<string | null>(null)
   const sort = ref<RepoSort>('updated')
   const contributedOnly = ref(false)
-  const commitCounts = ref<Record<string, number>>({})
+  const commitCounts = shallowRef<Record<string, number>>({})
 
   const languages = computed(() => {
     const set = new Set<string>()
@@ -73,8 +73,9 @@ export const useReposStore = defineStore('repos', () => {
         db.repos.toArray(),
         aggregateCommitCounts(),
       ])
-      repos.value = all
-      commitCounts.value = counts
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      repos.value = markRaw(all)
+      commitCounts.value = markRaw(counts)
     }
     finally {
       loading.value = false

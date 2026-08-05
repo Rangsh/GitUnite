@@ -82,14 +82,32 @@ export interface SyncCursor {
 }
 
 /** 平台适配器接口 */
+/** 适配器请求公共选项（取消、分页上限等） */
+export interface AdapterRequestOptions {
+  signal?: AbortSignal
+}
+
 export interface PlatformAdapter {
   platform: Platform
 
   /** 校验 Token 是否有效，返回用户信息 */
-  validateToken(token: string): Promise<UnifiedUser>
+  validateToken(token: string, opts?: AdapterRequestOptions): Promise<UnifiedUser>
 
-  /** 拉取当前用户的全部仓库（含私有、组织、fork） */
-  listRepos(token: string): Promise<UnifiedRepo[]>
+  /**
+   * 拉取当前用户的全部仓库（含私有、组织、fork）。
+   * includeLanguages 默认 false：语言字节分布由同步层按需增量补齐，避免每次全量打接口。
+   */
+  listRepos(
+    token: string,
+    opts?: AdapterRequestOptions & { includeLanguages?: boolean },
+  ): Promise<UnifiedRepo[]>
+
+  /** 拉取单个仓库的语言字节分布（成本：1 次请求） */
+  getRepoLanguages?(
+    token: string,
+    fullName: string,
+    opts?: AdapterRequestOptions,
+  ): Promise<Record<string, number>>
 
   /** 拉取指定仓库中当前用户的提交明细（不含逐提交的代码行统计） */
   listCommits(
@@ -97,6 +115,7 @@ export interface PlatformAdapter {
     repo: UnifiedRepo,
     userLogin: string,
     since?: string,
+    opts?: AdapterRequestOptions & { maxPages?: number },
   ): Promise<UnifiedCommit[]>
 
   /** 拉取单个提交的详情，补齐 additions/deletions/filesChanged（成本较高，按需调用） */
@@ -104,6 +123,7 @@ export interface PlatformAdapter {
     token: string,
     repo: UnifiedRepo,
     sha: string,
+    opts?: AdapterRequestOptions,
   ): Promise<{ additions: number, deletions: number, filesChanged: number } | null>
 
   /** 拉取指定仓库的按周聚合代码量（GitHub 支持，Gitee 不支持） */
@@ -111,6 +131,7 @@ export interface PlatformAdapter {
     token: string,
     repo: UnifiedRepo,
     userLogin: string,
+    opts?: AdapterRequestOptions,
   ): Promise<{ additions: number; deletions: number; weeks: { w: number, a: number; d: number, c: number }[] } | null>
 
   /** 拉取指定仓库中当前用户的 PR / Issue */
@@ -118,11 +139,12 @@ export interface PlatformAdapter {
     token: string,
     repo: UnifiedRepo,
     userLogin: string,
+    opts?: AdapterRequestOptions,
   ): Promise<UnifiedIssue[]>
 
   /**
    * 获取剩余 API 配额信息。
    * 平台不支持单独查询时返回 null（如 Gitee，其配额仅能从响应头被动读取）。
    */
-  getRateLimit(token: string): Promise<{ limit: number, remaining: number, resetAt: string } | null>
+  getRateLimit(token: string, opts?: AdapterRequestOptions): Promise<{ limit: number, remaining: number, resetAt: string } | null>
 }

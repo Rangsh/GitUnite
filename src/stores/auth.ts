@@ -5,6 +5,7 @@ import type { Platform, UnifiedUser } from '@/api/types'
 import { getAdapter } from '@/api'
 import { setRateLimit } from '@/api/rateLimit'
 import { db } from '@/db/schema'
+import { useAnalyticsStore } from '@/stores/analytics'
 
 export interface RateLimitInfo {
   limit: number
@@ -96,6 +97,8 @@ export const useAuthStore = defineStore('auth', {
         db.cursors.where('platform').equals(platform).delete(),
         db.repoStats.where('platform').equals(platform).delete(),
       ])
+      // 强制重载分析内存缓存，避免看板继续展示已断开平台的旧数据
+      void useAnalyticsStore().refresh()
     },
 
     async refreshRateLimit(platform: Platform) {

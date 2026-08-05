@@ -25,7 +25,7 @@ type HeaderSource =
  * AxiosHeaders 用原始大小写存 key（如 X-RateLimit-Limit），
  * 直接用 headers['x-ratelimit-limit'] 会得到 undefined，必须走 get() 或按 key 忽略大小写查找。
  */
-function readHeader(headers: HeaderSource, ...keys: string[]): string | undefined {
+export function readHeader(headers: HeaderSource, ...keys: string[]): string | undefined {
   for (const key of keys) {
     if (typeof headers.get === 'function') {
       const v = headers.get(key)

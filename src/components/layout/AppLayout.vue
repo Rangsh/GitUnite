@@ -1,55 +1,117 @@
 <script setup lang="ts">
-import { h, type Component } from 'vue'
+import { computed, h, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NText } from 'naive-ui'
-import * as icons from 'lucide-vue-next'
+import {
+  NConfigProvider, NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
+  NMenu, NIcon, NText, type GlobalThemeOverrides,
+} from 'naive-ui'
+import {
+  Award,
+  CalendarDays,
+  FolderGit2,
+  GitBranch,
+  LayoutDashboard,
+  Network,
+  Settings,
+} from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 
-interface MenuItem {
-  label: string
-  key: string
-  icon: string
+function iconOf(Icon: Component) {
+  return () => h(NIcon, null, { default: () => h(Icon) })
 }
-const menuOptions: MenuItem[] = [
-  { label: '数据看板', key: '/dashboard', icon: 'LayoutDashboard' },
-  { label: '仓库列表', key: '/repos', icon: 'FolderGit2' },
-  { label: '提交时间轴', key: '/timeline', icon: 'CalendarDays' },
-  { label: '协作网络', key: '/collaboration', icon: 'Network' },
-  { label: '年度报告', key: '/yearbook', icon: 'Award' },
-  { label: '设置', key: '/settings', icon: 'Settings' },
+
+const menuOptions = [
+  { label: '数据看板', key: '/dashboard', icon: iconOf(LayoutDashboard) },
+  { label: '仓库列表', key: '/repos', icon: iconOf(FolderGit2) },
+  { label: '提交时间轴', key: '/timeline', icon: iconOf(CalendarDays) },
+  { label: '协作网络', key: '/collaboration', icon: iconOf(Network) },
+  { label: '年度报告', key: '/yearbook', icon: iconOf(Award) },
+  { label: '设置', key: '/settings', icon: iconOf(Settings) },
 ]
 
-function renderIcon(name: string) {
-  return () => h(NIcon, null, { default: () => h(icons[name as keyof typeof icons] as Component) })
-}
+const themeOverrides = computed<GlobalThemeOverrides>(() => ({
+  common: {
+    primaryColor: '#0d9488',
+    primaryColorHover: '#0f766e',
+    primaryColorPressed: '#115e59',
+    primaryColorSuppl: '#14b8a6',
+    borderRadius: '10px',
+    fontFamily: '"DM Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
+  },
+  Menu: {
+    itemTextColor: '#64748b',
+    itemTextColorHover: '#0f172a',
+    itemTextColorActive: '#0f172a',
+    itemTextColorActiveHover: '#0f172a',
+    itemIconColor: '#94a3b8',
+    itemIconColorHover: '#0d9488',
+    itemIconColorActive: '#0d9488',
+    itemIconColorActiveHover: '#0d9488',
+    itemColorActive: 'rgba(13, 148, 136, 0.1)',
+    itemColorActiveHover: 'rgba(13, 148, 136, 0.14)',
+    itemColorHover: 'rgba(15, 23, 42, 0.04)',
+    borderRadius: '10px',
+  },
+  Layout: {
+    siderColor: '#ffffff',
+    headerColor: 'rgba(255,255,255,0.8)',
+  },
+}))
 
 function handleMenuSelect(key: string) {
-  router.push(key)
+  if (route.path === key) return
+  void router.push(key)
 }
 </script>
 
 <template>
-  <NLayout class="h-full" has-sider>
-    <NLayoutSider bordered collapse-mode="width" :collapsed-width="64" :width="220" show-trigger="bar">
-      <div class="flex items-center gap-2 px-4 py-5">
-        <component :is="icons.GitBranch" :size="24" class="text-brand-600" />
-        <NText strong class="text-lg">GitUnite</NText>
-      </div>
-      <NMenu
-        :value="route.path"
-        :options="menuOptions.map((o) => ({ ...o, icon: renderIcon(o.icon) }))"
-        @update:value="handleMenuSelect"
-      />
-    </NLayoutSider>
-    <NLayout>
-      <NLayoutHeader bordered class="flex items-center px-6" style="height: 56px">
-        <NText depth="2">多平台代码仓库聚合分析 · 本地运行</NText>
-      </NLayoutHeader>
-      <NLayoutContent class="p-6" content-style="background: transparent">
-        <RouterView />
-      </NLayoutContent>
+  <NConfigProvider :theme-overrides="themeOverrides">
+    <NLayout class="h-full" has-sider>
+      <NLayoutSider
+        bordered
+        collapse-mode="width"
+        :collapsed-width="64"
+        :width="232"
+        show-trigger="bar"
+        :native-scrollbar="false"
+        content-style="display: flex; flex-direction: column; background: #fff;"
+      >
+        <div class="flex items-center gap-2.5 px-5 py-5 shrink-0">
+          <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-ink-900 text-white">
+            <GitBranch :size="18" />
+          </div>
+          <div class="leading-tight">
+            <NText strong class="text-[15px] tracking-tight">GitUnite</NText>
+            <div class="text-[10px] font-medium uppercase tracking-wider text-ink-400">Local Archive</div>
+          </div>
+        </div>
+        <NMenu
+          :value="route.path"
+          :options="menuOptions"
+          :collapsed-width="64"
+          :collapsed-icon-size="20"
+          class="px-2"
+          @update:value="handleMenuSelect"
+        />
+      </NLayoutSider>
+      <NLayout class="h-full !bg-transparent">
+        <NLayoutHeader
+          bordered
+          class="flex items-center px-6 backdrop-blur-md shrink-0"
+          style="height: 56px; background: rgba(255,255,255,0.72); border-color: #e2e8f0;"
+        >
+          <NText class="!text-ink-500 text-sm">多平台代码仓库聚合分析 · 本地运行</NText>
+        </NLayoutHeader>
+        <NLayoutContent
+          class="h-full"
+          content-style="padding: 24px; min-height: calc(100vh - 56px); background: transparent;"
+          :native-scrollbar="false"
+        >
+          <RouterView />
+        </NLayoutContent>
+      </NLayout>
     </NLayout>
-  </NLayout>
+  </NConfigProvider>
 </template>

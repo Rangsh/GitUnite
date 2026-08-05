@@ -4,7 +4,7 @@ import { NCard, NSwitch, NSpace, NText, NInput } from 'naive-ui'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
-const { codeDetailEnabled, autoIncrementalSync, timezone } = storeToRefs(ui)
+const { codeDetailEnabled, timezone } = storeToRefs(ui)
 </script>
 
 <template>
@@ -14,17 +14,10 @@ const { codeDetailEnabled, autoIncrementalSync, timezone } = storeToRefs(ui)
         <div>
           <NText>代码行明细同步</NText>
           <div class="text-xs text-gray-400">
-            关闭后只统计提交次数，不统计新增/删除行数。Gitee 无聚合接口，开启后同步较慢。
+            默认关闭以保护账号。开启后会逐条请求提交详情（Gitee 尤其耗配额），仅在需要增删行统计时打开。
           </div>
         </div>
         <NSwitch v-model:value="codeDetailEnabled" />
-      </div>
-      <div class="flex items-center justify-between">
-        <div>
-          <NText>启动时自动增量同步</NText>
-          <div class="text-xs text-gray-400">每次打开应用自动拉取最近 30 天的新数据。</div>
-        </div>
-        <NSwitch v-model:value="autoIncrementalSync" />
       </div>
       <div class="flex items-center justify-between">
         <div>

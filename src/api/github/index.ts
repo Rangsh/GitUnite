@@ -1,4 +1,5 @@
 import type {
+  AdapterRequestOptions,
   PlatformAdapter,
   UnifiedCommit,
   UnifiedIssue,
@@ -6,7 +7,7 @@ import type {
   UnifiedUser,
 } from '../types'
 import { setRateLimit, updateRateLimitFromHeaders } from '../rateLimit'
-import { pickPrimaryLanguage, normalizeLanguageMap } from '../primaryLanguage'
+import { pickPrimaryLanguage, normalizeLanguageMap, normalizeCommitDate } from '../primaryLanguage'
 import { paginateAll } from '../paginate'
 import { createGithubClient } from './client'
 
@@ -47,7 +48,7 @@ interface GithubContributorStats {
 const githubAdapter: PlatformAdapter = {
   platform: 'github',
 
-  async validateToken(token): Promise<UnifiedUser> {
+  async validateToken(token, opts): Promise<UnifiedUser> {
     const client = createGithubClient(token)
     const { data, headers } = await client.get<{
       id: number
@@ -55,7 +56,7 @@ const githubAdapter: PlatformAdapter = {
       name: string | null
       avatar_url: string
       html_url: string
-    }>('/user')
+    }>('/user', { signal: opts?.signal })
     updateRateLimitFromHeaders('github', headers as Record<string, string | undefined>)
     return {
       id: `github:${data.id}`,
@@ -67,8 +68,9 @@ const githubAdapter: PlatformAdapter = {
     }
   },
 
-  async listRepos(token): Promise<UnifiedRepo[]> {
+  async listRepos(token, opts): Promise<UnifiedRepo[]> {
     const client = createGithubClient(token)
+    const includeLanguages = opts?.includeLanguages === true
 
     // /user/repos 覆盖自有、协作者、组织成员仓库。
     // 注：提过 PR 但不是协作者的外部仓库留到 M5 PR/Issue 统计阶段通过 Search API 补齐，
@@ -77,36 +79,53 @@ const githubAdapter: PlatformAdapter = {
       http: client,
       url: '/user/repos',
       perPage: 100,
+      maxPages: 50,
+      signal: opts?.signal,
       params: {
         affiliation: 'owner,collaborator,organization_member',
         sort: 'updated',
       },
     })
 
-    // 并发拉取 languages（受平台并发池限制）
-    const languagesResults = await Promise.all(
-      ownRepos.map(async (r) => {
-        try {
-          const { data } = await client.get(`/repos/${r.full_name}/languages`)
-          return normalizeLanguageMap(data)
-        }
-        catch {
-          return {}
-        }
-      }),
-    )
+    const me = await this.validateToken(token, opts).catch(() => null)
 
-    const me = await this.validateToken(token).catch(() => null)
+    let languagesResults: Record<string, number>[] = ownRepos.map(() => ({}))
+    if (includeLanguages) {
+      languagesResults = await Promise.all(
+        ownRepos.map(async (r) => {
+          try {
+            const { data } = await client.get(`/repos/${r.full_name}/languages`, { signal: opts?.signal })
+            return normalizeLanguageMap(data)
+          }
+          catch {
+            return {}
+          }
+        }),
+      )
+    }
+
     return ownRepos.map((r, i) => mapRepo(r, languagesResults[i], me?.login))
   },
 
-  async listCommits(token, repo, userLogin, since?): Promise<UnifiedCommit[]> {
+  async getRepoLanguages(token, fullName, opts) {
     const client = createGithubClient(token)
+    const { data } = await client.get(`/repos/${fullName}/languages`, { signal: opts?.signal })
+    return normalizeLanguageMap(data)
+  },
+
+  async listCommits(token, repo, userLogin, since?, opts?): Promise<UnifiedCommit[]> {
+    const client = createGithubClient(token)
+    const params: Record<string, unknown> = { author: userLogin }
+    if (since) params.since = since
+    // 增量通常很少页；全量也封顶，避免异常仓库打穿配额
+    const maxPages = opts?.maxPages ?? (since ? 20 : 40)
     const commits = await paginateAll<GithubCommit>({
       http: client,
       url: `/repos/${repo.fullName}/commits`,
       perPage: 100,
-      params: { author: userLogin, since },
+      maxPages,
+      signal: opts?.signal,
+      params,
     })
 
     return commits
@@ -114,10 +133,13 @@ const githubAdapter: PlatformAdapter = {
       .map(c => mapCommit(c, repo))
   },
 
-  async getCommitDetail(token, repo, sha) {
+  async getCommitDetail(token, repo, sha, opts) {
     const client = createGithubClient(token)
     try {
-      const { data } = await client.get<GithubCommit>(`/repos/${repo.fullName}/commits/${sha}`)
+      const { data } = await client.get<GithubCommit>(
+        `/repos/${repo.fullName}/commits/${sha}`,
+        { signal: opts?.signal },
+      )
       return {
         additions: data.stats?.additions ?? 0,
         deletions: data.stats?.deletions ?? 0,
@@ -129,17 +151,21 @@ const githubAdapter: PlatformAdapter = {
     }
   },
 
-  async getWeeklyStats(token, repo, userLogin) {
+  async getWeeklyStats(token, repo, userLogin, opts) {
     const client = createGithubClient(token)
-    // GitHub 在统计未就绪时返回 202，需要轮询
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // GitHub 在统计未就绪时返回 202，需要轮询（次数从严）
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (opts?.signal?.aborted) return null
       try {
         const res = await client.get<GithubContributorStats[]>(
           `/repos/${repo.fullName}/stats/contributors`,
-          { validateStatus: (s: number) => s === 200 || s === 202 || s === 204 },
+          {
+            signal: opts?.signal,
+            validateStatus: (s: number) => s === 200 || s === 202 || s === 204,
+          },
         )
         if (res.status === 202) {
-          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
           continue
         }
         if (res.status === 204 || !Array.isArray(res.data)) return null
@@ -158,18 +184,18 @@ const githubAdapter: PlatformAdapter = {
     return null
   },
 
-  async listPullRequestsAndIssues(token, repo, userLogin): Promise<UnifiedIssue[]> {
+  async listPullRequestsAndIssues(token, repo, userLogin, opts): Promise<UnifiedIssue[]> {
     const client = createGithubClient(token)
-    const prs = await searchIssues(client, `repo:${repo.fullName} type:pr author:${userLogin}`)
-    const issues = await searchIssues(client, `repo:${repo.fullName} type:issue author:${userLogin}`)
+    const prs = await searchIssues(client, `repo:${repo.fullName} type:pr author:${userLogin}`, opts)
+    const issues = await searchIssues(client, `repo:${repo.fullName} type:issue author:${userLogin}`, opts)
     return [...prs, ...issues]
   },
 
-  async getRateLimit(token) {
+  async getRateLimit(token, opts) {
     const client = createGithubClient(token)
     const { data, headers } = await client.get<{
       resources: { core: { limit: number, remaining: number, reset: number } }
-    }>('/rate_limit')
+    }>('/rate_limit', { signal: opts?.signal })
     updateRateLimitFromHeaders('github', headers as Record<string, string | undefined>)
     const core = data.resources.core
     const info = {
@@ -185,9 +211,11 @@ const githubAdapter: PlatformAdapter = {
 async function searchIssues(
   client: ReturnType<typeof createGithubClient>,
   q: string,
+  opts?: AdapterRequestOptions,
 ): Promise<UnifiedIssue[]> {
   const all: UnifiedIssue[] = []
   for (let page = 1; page <= 10; page++) {
+    if (opts?.signal?.aborted) break
     const { data } = await client.get<{
       items: Array<{
         number: number
@@ -198,7 +226,7 @@ async function searchIssues(
         closed_at: string | null
         html_url: string
       }>
-    }>('/search/issues', { params: { q, per_page: 100, page } })
+    }>('/search/issues', { params: { q, per_page: 100, page }, signal: opts?.signal })
     const items = data.items ?? []
     for (const it of items) {
       const isPr = !!it.pull_request
@@ -260,7 +288,7 @@ function mapCommit(c: GithubCommit, repo: UnifiedRepo): UnifiedCommit {
     message: c.commit.message,
     authorLogin: c.author?.login ?? null,
     authorName: c.commit.author?.name ?? null,
-    authoredAt: c.commit.author?.date ?? '',
+    authoredAt: normalizeCommitDate(c.commit.author?.date),
     additions: c.stats?.additions ?? 0,
     deletions: c.stats?.deletions ?? 0,
     filesChanged: c.files?.length ?? 0,

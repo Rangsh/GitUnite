@@ -1,4 +1,5 @@
 import type {
+  AdapterRequestOptions,
   PlatformAdapter,
   UnifiedCommit,
   UnifiedIssue,
@@ -6,7 +7,7 @@ import type {
   UnifiedUser,
 } from '../types'
 import { updateRateLimitFromHeaders } from '../rateLimit'
-import { pickPrimaryLanguage, normalizeLanguageMap } from '../primaryLanguage'
+import { pickPrimaryLanguage, normalizeLanguageMap, normalizeCommitDate, isCommitByUser } from '../primaryLanguage'
 import { paginateAll } from '../paginate'
 import { createGiteeClient } from './client'
 
@@ -39,10 +40,14 @@ interface GiteeCommit {
   files?: { filename: string }[]
 }
 
+/** Gitee 无可靠 author 过滤时的分页硬顶（账号安全优先） */
+const GITEE_COMMIT_MAX_PAGES_INCREMENTAL = 8
+const GITEE_COMMIT_MAX_PAGES_FULL = 20
+
 const giteeAdapter: PlatformAdapter = {
   platform: 'gitee',
 
-  async validateToken(token): Promise<UnifiedUser> {
+  async validateToken(token, opts): Promise<UnifiedUser> {
     const client = createGiteeClient(token)
     const { data, headers } = await client.get<{
       id: number
@@ -50,7 +55,7 @@ const giteeAdapter: PlatformAdapter = {
       name: string
       avatar_url: string
       html_url: string
-    }>('/user')
+    }>('/user', { signal: opts?.signal })
     updateRateLimitFromHeaders('gitee', headers as Record<string, string | undefined>)
     return {
       id: `gitee:${data.id}`,
@@ -62,18 +67,20 @@ const giteeAdapter: PlatformAdapter = {
     }
   },
 
-  async listRepos(token): Promise<UnifiedRepo[]> {
+  async listRepos(token, opts): Promise<UnifiedRepo[]> {
     const client = createGiteeClient(token)
+    const includeLanguages = opts?.includeLanguages === true
     // type=all 同时覆盖自有与组织成员仓库
     const repos = await paginateAll<GiteeRepo>({
       http: client,
       url: '/user/repos',
       perPage: 100,
-      maxPages: 100,
+      maxPages: 50,
+      signal: opts?.signal,
       params: { type: 'all', sort: 'updated' },
     })
 
-    const me = await this.validateToken(token).catch(() => null)
+    const me = await this.validateToken(token, opts).catch(() => null)
     const seen = new Set<string>()
     const unique = repos.filter((r) => {
       const key = r.full_name.toLowerCase()
@@ -82,40 +89,62 @@ const giteeAdapter: PlatformAdapter = {
       return true
     })
 
-    const languagesResults = await Promise.all(
-      unique.map(async (r) => {
-        try {
-          // Gitee 返回 { languages: [{ language, bytes, percent }] }，需归一化
-          const { data } = await client.get(`/repos/${r.full_name}/languages`)
-          return normalizeLanguageMap(data)
-        }
-        catch {
-          return {}
-        }
-      }),
-    )
+    let languagesResults: Record<string, number>[] = unique.map(() => ({}))
+    if (includeLanguages) {
+      languagesResults = await Promise.all(
+        unique.map(async (r) => {
+          try {
+            const { data } = await client.get(`/repos/${r.full_name}/languages`, { signal: opts?.signal })
+            return normalizeLanguageMap(data)
+          }
+          catch {
+            return {}
+          }
+        }),
+      )
+    }
 
     return unique.map((r, i) => mapRepo(r, languagesResults[i], me?.login))
   },
 
-  async listCommits(token, repo, userLogin, since?): Promise<UnifiedCommit[]> {
+  async getRepoLanguages(token, fullName, opts) {
     const client = createGiteeClient(token)
-    const commits = await paginateAll<GiteeCommit>({
+    const { data } = await client.get(`/repos/${fullName}/languages`, { signal: opts?.signal })
+    return normalizeLanguageMap(data)
+  },
+
+  async listCommits(token, repo, userLogin, since?, opts?): Promise<UnifiedCommit[]> {
+    const client = createGiteeClient(token)
+    const params: Record<string, unknown> = {}
+    if (since) params.since = since
+
+    // Gitee 的 author 查询参数经常直接返回空数组（与 GitHub 行为不一致）。
+    // 策略：先不带 author 拉取，再在本地按 login / name 过滤。
+    // 因此必须严控 maxPages，避免组织大仓把配额打穿。
+    const maxPages = opts?.maxPages
+      ?? (since ? GITEE_COMMIT_MAX_PAGES_INCREMENTAL : GITEE_COMMIT_MAX_PAGES_FULL)
+
+    const raw = await paginateAll<GiteeCommit>({
       http: client,
       url: `/repos/${repo.fullName}/commits`,
       perPage: 100,
-      maxPages: 100,
-      params: { author: userLogin, since },
+      maxPages,
+      signal: opts?.signal,
+      params,
     })
-    return commits
-      .filter(c => !!c.commit.author)
+
+    return raw
+      .filter(c => isCommitByUser(c, userLogin) && !!c.commit?.author?.date)
       .map(c => mapCommit(c, repo))
   },
 
-  async getCommitDetail(token, repo, sha) {
+  async getCommitDetail(token, repo, sha, opts) {
     const client = createGiteeClient(token)
     try {
-      const { data } = await client.get<GiteeCommit>(`/repos/${repo.fullName}/commits/${sha}`)
+      const { data } = await client.get<GiteeCommit>(
+        `/repos/${repo.fullName}/commits/${sha}`,
+        { signal: opts?.signal },
+      )
       return {
         additions: data.stats?.additions ?? 0,
         deletions: data.stats?.deletions ?? 0,
@@ -127,11 +156,11 @@ const giteeAdapter: PlatformAdapter = {
     }
   },
 
-  async listPullRequestsAndIssues(token, repo, userLogin): Promise<UnifiedIssue[]> {
+  async listPullRequestsAndIssues(token, repo, userLogin, opts): Promise<UnifiedIssue[]> {
     const client = createGiteeClient(token)
     const [prs, issues] = await Promise.all([
-      paginateGiteeItems(client, `/repos/${repo.fullName}/pulls`, { creator: userLogin, state: 'all' }),
-      paginateGiteeItems(client, `/repos/${repo.fullName}/issues`, { creator: userLogin, state: 'all' }),
+      paginateGiteeItems(client, `/repos/${repo.fullName}/pulls`, { creator: userLogin, state: 'all' }, opts),
+      paginateGiteeItems(client, `/repos/${repo.fullName}/issues`, { creator: userLogin, state: 'all' }, opts),
     ])
     return [...prs, ...issues]
   },
@@ -147,9 +176,11 @@ async function paginateGiteeItems(
   client: ReturnType<typeof createGiteeClient>,
   url: string,
   params: Record<string, unknown>,
+  opts?: AdapterRequestOptions,
 ): Promise<UnifiedIssue[]> {
   const result: UnifiedIssue[] = []
-  for (let page = 1; page <= 100; page++) {
+  for (let page = 1; page <= 20; page++) {
+    if (opts?.signal?.aborted) break
     const { data } = await client.get<Array<{
       number: number
       title: string
@@ -158,7 +189,7 @@ async function paginateGiteeItems(
       closed_at: string | null
       html_url: string
       merged_at?: string | null
-    }>>(url, { params: { ...params, per_page: 100, page } })
+    }>>(url, { params: { ...params, per_page: 100, page }, signal: opts?.signal })
     const items = data ?? []
     const isPr = url.includes('/pulls')
     for (const it of items) {
@@ -217,7 +248,7 @@ function mapCommit(c: GiteeCommit, repo: UnifiedRepo): UnifiedCommit {
     message: c.commit.message,
     authorLogin: c.author?.login ?? null,
     authorName: c.commit.author?.name ?? null,
-    authoredAt: c.commit.author?.date ?? '',
+    authoredAt: normalizeCommitDate(c.commit.author?.date),
     // Gitee 列表接口不返回 stats，需要按 SHA 调详情补齐；由同步引擎按开关决定是否调用
     additions: c.stats?.additions ?? 0,
     deletions: c.stats?.deletions ?? 0,

@@ -1,6 +1,6 @@
 import type { Platform, UnifiedCommit, UnifiedRepo } from '@/api/types'
 import type { RepoWeeklyStat } from '@/db/schema'
-import { dayjs, localDateKey, localDayOfWeek, localHour } from './date'
+import { createTzHelpers, dayjs, resolveTimezone } from './date'
 
 export type AnalyticsScope = 'all' | Platform
 
@@ -133,7 +133,9 @@ export function computeBasicStats(input: AnalyticsInput): BasicStats {
 
   let additions = 0
   let deletions = 0
-  let hasCodeDetail = false
+  // 各平台各自判定；聚合时任一平台有活动但缺明细 → 整体视为不完整
+  let githubDetailOk = true
+  let giteeDetailOk = true
 
   if (input.scope === 'all' || input.scope === 'github') {
     const ghStats = input.repoStats.filter(s => s.platform === 'github' && repoIds.has(s.repoId))
@@ -141,7 +143,9 @@ export function computeBasicStats(input: AnalyticsInput): BasicStats {
       additions += s.additions
       deletions += s.deletions
     }
-    if (ghStats.length > 0) hasCodeDetail = true
+    const hasGithubActivity = repos.some(r => r.platform === 'github')
+      || commits.some(c => c.platform === 'github')
+    if (hasGithubActivity) githubDetailOk = ghStats.length > 0
   }
   if (input.scope === 'all' || input.scope === 'gitee') {
     // Gitee 代码量来自逐提交明细
@@ -152,12 +156,8 @@ export function computeBasicStats(input: AnalyticsInput): BasicStats {
       deletions += c.deletions
       if (c.additions > 0 || c.deletions > 0 || c.filesChanged > 0) giteeHasDetail = true
     }
-    // Gitee 有提交且明细开关开着才算有明细
-    if (giteeCommits.length > 0 && input.codeDetailEnabled && giteeHasDetail) {
-      hasCodeDetail = true
-    }
-    else if (input.scope === 'gitee') {
-      hasCodeDetail = giteeHasDetail && input.codeDetailEnabled
+    if (giteeCommits.length > 0) {
+      giteeDetailOk = input.codeDetailEnabled && giteeHasDetail
     }
   }
 
@@ -171,7 +171,7 @@ export function computeBasicStats(input: AnalyticsInput): BasicStats {
     additions,
     deletions,
     avgChanges,
-    hasCodeDetail,
+    hasCodeDetail: githubDetailOk && giteeDetailOk,
   }
 }
 
@@ -199,14 +199,12 @@ function computeStreaks(dateKeys: string[], tz?: string): StreakInfo {
       longestEnd = sorted[i]
     }
   }
-  if (longest === 1) {
-    longestEnd = sorted[sorted.length - 1]
-    longestStart = runStart
-  }
 
   // 当前连续：最近提交日为今天或昨天才视为仍在继续
-  const today = dayjs().tz(tz ?? dayjs.tz.guess()).format('YYYY-MM-DD')
-  const yesterday = dayjs(today).subtract(1, 'day').format('YYYY-MM-DD')
+  // 注意：空字符串不能用 ??，必须走 resolveTimezone
+  const zone = resolveTimezone(tz)
+  const today = dayjs().tz(zone).format('YYYY-MM-DD')
+  const yesterday = dayjs.tz(today, zone).subtract(1, 'day').format('YYYY-MM-DD')
   const last = sorted[sorted.length - 1]
   let current = 0
   if (last === today || last === yesterday) {
@@ -249,22 +247,33 @@ export function computeActivity(input: AnalyticsInput): ActivityStats {
 
   if (commits.length === 0) return empty
 
+  const tz = createTzHelpers(input.tz)
   const hourly = new Array(24).fill(0)
   const weekday = new Array(7).fill(0)
   const daySet = new Set<string>()
-  let first = commits[0].authoredAt
-  let last = commits[0].authoredAt
+  let first = ''
+  let last = ''
   let lateNight = 0
 
   for (const c of commits) {
+    if (!c.authoredAt || Number.isNaN(toDate(c.authoredAt))) continue
     const d = toDate(c.authoredAt)
-    if (d < toDate(first)) first = c.authoredAt
-    if (d > toDate(last)) last = c.authoredAt
-    const h = localHour(c.authoredAt, input.tz)
-    hourly[h]++
-    weekday[localDayOfWeek(c.authoredAt, input.tz)]++
-    daySet.add(localDateKey(c.authoredAt, input.tz))
+    if (!first || d < toDate(first)) first = c.authoredAt
+    if (!last || d > toDate(last)) last = c.authoredAt
+    const h = tz.hour(c.authoredAt)
+    if (h >= 0 && h < 24) hourly[h]++
+    weekday[tz.dayOfWeek(c.authoredAt)]++
+    const key = tz.dateKey(c.authoredAt)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(key)) daySet.add(key)
     if (h < 6) lateNight++
+  }
+
+  if (daySet.size === 0) {
+    return {
+      ...empty,
+      firstCommitAt: first || null,
+      lastCommitAt: last || null,
+    }
   }
 
   // 黄金时段：连续 3 小时窗口最大
@@ -282,8 +291,8 @@ export function computeActivity(input: AnalyticsInput): ActivityStats {
   const streak = computeStreaks(dateKeys, input.tz)
 
   return {
-    firstCommitAt: first,
-    lastCommitAt: last,
+    firstCommitAt: first || null,
+    lastCommitAt: last || null,
     activeDays: daySet.size,
     avgCommitsPerDay: commits.length / daySet.size,
     longestStreak: streak.longest,
@@ -303,9 +312,10 @@ function toDate(iso: string): number {
 
 /**
  * 语言统计：按 repo.languages 字节数加权聚合。
+ * 排除 Fork，与「仓库总数不含 Fork」口径一致，避免 fork 源码体积虚高。
  */
 export function computeLanguages(input: AnalyticsInput): LanguageStat[] {
-  const repos = filterRepos(input.repos, input.scope)
+  const repos = filterRepos(input.repos, input.scope).filter(r => !r.isFork)
   const byteMap = new Map<string, number>()
   const repoSet = new Map<string, Set<string>>()
 
@@ -353,7 +363,7 @@ export function computeLanguageTrend(
   granularity: 'year' | 'quarter' = 'year',
   topN = 8,
 ): LanguageTrendResult {
-  const repos = filterRepos(input.repos, input.scope)
+  const repos = filterRepos(input.repos, input.scope).filter(r => !r.isFork)
   const repoIds = new Set(repos.map(r => r.id))
   const reposById = new Map(repos.map(r => [r.id, r]))
   let commits = input.commits.filter(c => repoIds.has(c.repoId))
@@ -365,17 +375,19 @@ export function computeLanguageTrend(
   const langTotals = new Map<string, number>()
   const periods = new Set<string>()
 
+  const tz = createTzHelpers(input.tz)
   for (const c of commits) {
     const repo = reposById.get(c.repoId)
     const lang = repo?.language || '未知'
-    const d = dayjs(c.authoredAt)
+    const key = tz.dateKey(c.authoredAt)
     let period: string
     if (granularity === 'year') {
-      period = d.format('YYYY')
+      period = key.slice(0, 4)
     }
     else {
-      const q = Math.floor(d.month() / 3) + 1
-      period = `${d.format('YYYY')}-Q${q}`
+      const month = Number(key.slice(5, 7))
+      const q = Math.floor((month - 1) / 3) + 1
+      period = `${key.slice(0, 4)}-Q${q}`
     }
     periods.add(period)
     if (!bucket.has(period)) bucket.set(period, new Map())
@@ -432,8 +444,9 @@ export function computeDailyBuckets(input: AnalyticsInput): Map<string, DailyBuc
   commits = dedupeCommits(commits, reposById)
 
   const map = new Map<string, DailyBucket>()
+  const tz = createTzHelpers(input.tz)
   for (const c of commits) {
-    const key = localDateKey(c.authoredAt, input.tz)
+    const key = tz.dateKey(c.authoredAt)
     if (!map.has(key)) {
       map.set(key, { date: key, commits: [], additions: 0, deletions: 0 })
     }
@@ -454,7 +467,7 @@ export function computeDailyBuckets(input: AnalyticsInput): Map<string, DailyBuc
         const weekStart = dayjs.unix(w.w)
         const daysInWeek: string[] = []
         for (let i = 0; i < 7; i++) {
-          const key = localDateKey(weekStart.add(i, 'day').toDate(), input.tz)
+          const key = tz.dateKey(weekStart.add(i, 'day').toDate())
           if (map.has(key) && map.get(key)!.commits.some(c => c.platform === 'github')) {
             daysInWeek.push(key)
           }
@@ -475,25 +488,20 @@ export function computeDailyBuckets(input: AnalyticsInput): Map<string, DailyBuc
 }
 
 /**
- * 把每日桶转换成热力图点，并按时间范围截断。
+ * 把每日桶转换成热力图点，按自然年截断（1/1–12/31）。
+ * 起止日期与桶的 dateKey 必须同一时区。
  */
 export function computeHeatmap(
   input: AnalyticsInput,
-  range: '1y' | '2y' | 'all' = '1y',
+  year: number,
 ): HeatmapPoint[] {
   const buckets = computeDailyBuckets(input)
-  const now = dayjs()
-  let start: dayjs.Dayjs
-  if (range === '1y') start = now.subtract(1, 'year')
-  else if (range === '2y') start = now.subtract(2, 'year')
-  else {
-    const all = [...buckets.keys()].sort()
-    start = all.length ? dayjs(all[0]) : now.subtract(1, 'year')
-  }
+  const zone = resolveTimezone(input.tz)
+  const start = dayjs.tz(`${year}-01-01`, zone).startOf('day')
+  const end = dayjs.tz(`${year}-12-31`, zone).startOf('day')
 
   const points: HeatmapPoint[] = []
-  let cursor = start.startOf('day')
-  const end = now.endOf('day')
+  let cursor = start
   while (cursor.isBefore(end) || cursor.isSame(end, 'day')) {
     const key = cursor.format('YYYY-MM-DD')
     const b = buckets.get(key)

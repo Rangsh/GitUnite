@@ -2,7 +2,9 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSyncStore } from '@/stores/sync'
 import { useUiStore } from '@/stores/ui'
+import { useAnalyticsStore } from '@/stores/analytics'
 import { isGiteeFirstSync, syncAll, syncPlatform } from '@/sync/engine'
+import { tryAcquireSyncLock } from '@/sync/syncLock'
 import { dialog, message } from '@/composables/useFeedback'
 import type { Platform } from '@/api/types'
 
@@ -14,6 +16,8 @@ export interface StartOptions {
   /** 轻量增量：只同步近 N 天活跃的仓库 */
   recentOnly?: boolean
   recentDays?: number
+  /** 忽略游标，重新拉取完整提交历史 */
+  fullHistory?: boolean
 }
 
 export function useSync() {
@@ -35,11 +39,10 @@ export function useSync() {
       dialog.warning({
         title: 'Gitee 代码明细同步提示',
         content:
-          'Gitee 平台不提供代码行聚合接口，开启代码明细同步后需要逐个提交请求详情，耗时较长且容易触发限流。\n\n你可以在「设置 - 同步选项」中关闭「代码行明细同步」来加快速度；关闭后只统计提交次数，不影响其他功能。',
+          'Gitee 平台不提供代码行聚合接口，开启代码明细同步后需要逐个提交请求详情，耗时较长且容易触发限流。\n\n建议在「设置 - 同步选项」中保持关闭；仅在确实需要增删行统计时开启。本次同步仍会限制明细请求数量以保护账号。',
         positiveText: '我知道了，开始同步',
         negativeText: '暂不同步',
         // 注意：不要 await doStart()，否则对话框会一直 loading 到整个同步结束才关闭。
-        // 同步在后台执行，进度由 syncStore / message 展示。
         onPositiveClick: () => {
           void doStart(platform, options)
         },
@@ -51,28 +54,52 @@ export function useSync() {
   }
 
   async function doStart(platform?: Platform, options: StartOptions = {}) {
+    const lock = await tryAcquireSyncLock()
+    if (!lock) {
+      if (!options.silent) {
+        message.warning('另一个标签页正在同步，请稍后再试（防止双开打穿平台限流）')
+      }
+      return
+    }
+
     abortController.value = new AbortController()
     try {
       const syncOpts = {
         signal: abortController.value.signal,
         recentOnly: options.recentOnly,
         recentDays: options.recentDays,
+        fullHistory: options.fullHistory,
       }
       if (platform) await syncPlatform(platform, syncOpts)
       else await syncAll(syncOpts)
 
-      if (!abortController.value?.signal.aborted && !options.silent) {
-        message.success('同步完成')
+      if (!abortController.value?.signal.aborted) {
+        if (!options.silent) message.success('同步完成')
+        // 后台刷新看板，不阻塞同步收尾；refresh 内部用 shallowRef，避免卡住路由
+        void useAnalyticsStore().refresh()
       }
     }
     catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        syncStore.resetAll()
+        return
+      }
+      // axios / fetch 取消
+      if ((err as { code?: string, name?: string })?.code === 'ERR_CANCELED') {
+        syncStore.resetAll()
+        return
+      }
+      if ((err as { name?: string })?.name === 'CanceledError') {
+        syncStore.resetAll()
+        return
+      }
       if (!options.silent) {
         message.error(`同步失败：${(err as Error).message}`)
       }
     }
     finally {
       abortController.value = null
+      lock.release()
     }
   }
 

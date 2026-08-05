@@ -15,11 +15,60 @@ dayjs.extend(advancedFormat)
 
 /**
  * 返回用于统计的目标时区（IANA 名称）。
- * 传入 tzOverride 优先；否则回退到浏览器猜测时区。
+ * 传入 tzOverride 优先；空字符串 / 空白视为未设置，回退浏览器时区。
  */
 export function resolveTimezone(tzOverride?: string): string {
   if (tzOverride && tzOverride.trim()) return tzOverride.trim()
-  return dayjs.tz.guess()
+  try {
+    return dayjs.tz.guess() || 'UTC'
+  }
+  catch {
+    return 'UTC'
+  }
+}
+
+const weekdayIndex: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+}
+
+export interface TzHelpers {
+  dateKey: (utcIso: string | Date) => string
+  hour: (utcIso: string | Date) => number
+  dayOfWeek: (utcIso: string | Date) => number
+}
+
+/**
+ * 批量统计时复用同一套 Intl formatter，避免每条 commit 都走 dayjs.tz（主线程杀手）。
+ */
+export function createTzHelpers(tzOverride?: string): TzHelpers {
+  const tz = resolveTimezone(tzOverride)
+  const dateFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const hourFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    hourCycle: 'h23',
+  })
+  const weekFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+  })
+
+  return {
+    dateKey: (utcIso) => dateFmt.format(new Date(utcIso)),
+    hour: (utcIso) => Number(hourFmt.format(new Date(utcIso))),
+    dayOfWeek: (utcIso) => weekdayIndex[weekFmt.format(new Date(utcIso))] ?? 0,
+  }
 }
 
 /**
@@ -33,21 +82,21 @@ export function toLocal(utcIso: string | Date, tz?: string): dayjs.Dayjs {
  * 返回 YYYY-MM-DD 格式的本地日期字符串（用于按天聚合 / 去重）。
  */
 export function localDateKey(utcIso: string | Date, tz?: string): string {
-  return toLocal(utcIso, tz).format('YYYY-MM-DD')
+  return createTzHelpers(tz).dateKey(utcIso)
 }
 
 /**
  * 返回本地小时 0-23。
  */
 export function localHour(utcIso: string | Date, tz?: string): number {
-  return toLocal(utcIso, tz).hour()
+  return createTzHelpers(tz).hour(utcIso)
 }
 
 /**
  * 返回本地星期几，0=周日 … 6=周六。
  */
 export function localDayOfWeek(utcIso: string | Date, tz?: string): number {
-  return toLocal(utcIso, tz).day()
+  return createTzHelpers(tz).dayOfWeek(utcIso)
 }
 
 /**

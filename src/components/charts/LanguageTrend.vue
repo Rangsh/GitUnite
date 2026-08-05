@@ -9,8 +9,8 @@ const props = defineProps<{
 }>()
 
 const palette = [
-  '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+  '#0d9488', '#0ea5e9', '#f59e0b', '#ef4444', '#6366f1',
+  '#10b981', '#f97316', '#64748b', '#06b6d4', '#84cc16',
 ]
 
 const option = computed(() => {
@@ -18,37 +18,42 @@ const option = computed(() => {
   return {
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow' },
+      axisPointer: { type: 'line', lineStyle: { color: '#cbd5e1' } },
+      backgroundColor: '#0f172a',
+      borderWidth: 0,
+      textStyle: { color: '#f8fafc', fontSize: 12 },
     },
     legend: {
       type: 'scroll',
       top: 0,
-      textStyle: { fontSize: 11 },
+      textStyle: { fontSize: 11, color: '#64748b' },
     },
-    grid: { left: 44, right: 16, top: 36, bottom: 28 },
+    grid: { left: 44, right: 16, top: 40, bottom: 28 },
     xAxis: {
       type: 'category',
       data: periods,
       axisTick: { show: false },
-      axisLabel: { fontSize: 11 },
+      axisLabel: { fontSize: 11, color: '#94a3b8' },
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
     },
     yAxis: {
       type: 'value',
       minInterval: 1,
-      splitLine: { lineStyle: { color: '#f0f0f0' } },
-      axisLabel: { fontSize: 11 },
+      splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+      axisLabel: { fontSize: 10, color: '#94a3b8' },
     },
     series: languages.map((lang, i) => ({
       name: lang,
       type: 'line',
       stack: 'total',
-      areaStyle: { opacity: 0.7 },
+      areaStyle: { opacity: 0.55 },
       smooth: true,
       symbol: 'circle',
       symbolSize: 5,
       showSymbol: periods.length <= 12,
       emphasis: { focus: 'series' },
       itemStyle: { color: palette[i % palette.length] },
+      lineStyle: { width: 2 },
       data: series[lang],
     })),
   }
@@ -62,7 +67,11 @@ const option = computed(() => {
     :style="{ height: height || '300px', width: '100%' }"
     autoresize
   />
-  <div v-else class="flex items-center justify-center text-gray-400 text-sm" :style="{ height: height || '300px' }">
+  <div
+    v-else
+    class="flex items-center justify-center text-sm text-ink-400"
+    :style="{ height: height || '300px' }"
+  >
     暂无趋势数据
   </div>
 </template>

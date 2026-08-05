@@ -3,15 +3,17 @@
 @tailwind utilities;
 
 :root {
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    'PingFang SC',
-    'Hiragino Sans GB',
-    'Microsoft YaHei',
-    sans-serif;
+  --gu-bg: #f1f5f9;
+  --gu-surface: #ffffff;
+  --gu-border: #e2e8f0;
+  --gu-ink: #0f172a;
+  --gu-muted: #64748b;
+  --gu-accent: #0d9488;
+  --gu-accent-soft: #ccfbf1;
   color-scheme: light;
+  font-family: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--gu-ink);
+  background: var(--gu-bg);
 }
 
 html,
@@ -19,4 +21,24 @@ body,
 #app {
   height: 100%;
   margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 0% -10%, rgba(13, 148, 136, 0.08), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(15, 23, 42, 0.04), transparent 50%),
+    var(--gu-bg);
+}
+
+/* 数字 KPI：等宽、紧凑字距 */
+.gu-metric {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up {
+    animation: none !important;
+  }
 }

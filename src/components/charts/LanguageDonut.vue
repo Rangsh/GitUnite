@@ -11,9 +11,9 @@ const props = defineProps<{
 }>()
 
 const palette = [
-  '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-  '#06b6d4', '#eab308',
+  '#0d9488', '#0ea5e9', '#f59e0b', '#ef4444', '#6366f1',
+  '#10b981', '#f97316', '#64748b', '#06b6d4', '#84cc16',
+  '#8b5cf6', '#eab308',
 ]
 
 const option = computed(() => {
@@ -21,6 +21,9 @@ const option = computed(() => {
   return {
     tooltip: {
       trigger: 'item',
+      backgroundColor: '#0f172a',
+      borderWidth: 0,
+      textStyle: { color: '#f8fafc', fontSize: 12 },
       formatter: (p: any) => {
         const d = items[p.dataIndex]
         if (!d) return p.name
@@ -30,18 +33,19 @@ const option = computed(() => {
     legend: {
       type: 'scroll',
       orient: 'vertical',
-      right: 8,
+      right: 4,
       top: 'middle',
-      textStyle: { fontSize: 12 },
+      textStyle: { fontSize: 11, color: '#64748b' },
+      pageIconColor: '#64748b',
     },
     series: [
       {
         name: '语言占比',
         type: 'pie',
-        radius: ['45%', '72%'],
+        radius: ['48%', '72%'],
         center: ['38%', '50%'],
         avoidLabelOverlap: true,
-        itemStyle: { borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderColor: '#fff', borderWidth: 3, borderRadius: 4 },
         label: { show: false },
         labelLine: { show: false },
         data: items.map((d, i) => ({
@@ -59,10 +63,14 @@ const option = computed(() => {
   <VChart
     v-if="data.length"
     :option="option"
-    :style="{ height: height || '320px', width: '100%' }"
+    :style="{ height: height || '280px', width: '100%' }"
     autoresize
   />
-  <div v-else class="flex items-center justify-center text-gray-400 text-sm" :style="{ height: height || '320px' }">
+  <div
+    v-else
+    class="flex items-center justify-center text-sm text-ink-400"
+    :style="{ height: height || '280px' }"
+  >
     暂无语言数据
   </div>
 </template>

@@ -34,11 +34,9 @@ const maxValue = computed(() => {
 })
 
 const range = computed(() => {
-  if (!props.data.length) return { start: new Date(), end: new Date() }
-  return {
-    start: new Date(props.data[0].date),
-    end: new Date(props.data[props.data.length - 1].date),
-  }
+  if (!props.data.length) return ['2024-01-01', '2024-01-01'] as [string, string]
+  // 必须用 YYYY-MM-DD 字符串；new Date('YYYY-MM-DD') 会按 UTC 解析导致东八区偏一天
+  return [props.data[0].date, props.data[props.data.length - 1].date] as [string, string]
 })
 
 const option = computed(() => {
