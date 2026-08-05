@@ -120,6 +120,9 @@ export interface PlatformAdapter {
     userLogin: string,
   ): Promise<UnifiedIssue[]>
 
-  /** 获取剩余 API 配额信息 */
-  getRateLimit(token: string): Promise<{ limit: number; remaining: number; resetAt: string }>
+  /**
+   * 获取剩余 API 配额信息。
+   * 平台不支持单独查询时返回 null（如 Gitee，其配额仅能从响应头被动读取）。
+   */
+  getRateLimit(token: string): Promise<{ limit: number, remaining: number, resetAt: string } | null>
 }

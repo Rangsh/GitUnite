@@ -5,7 +5,8 @@ import type {
   UnifiedRepo,
   UnifiedUser,
 } from '../types'
-import { setRateLimit, updateRateLimitFromHeaders } from '../rateLimit'
+import { updateRateLimitFromHeaders } from '../rateLimit'
+import { pickPrimaryLanguage, normalizeLanguageMap } from '../primaryLanguage'
 import { paginateAll } from '../paginate'
 import { createGiteeClient } from './client'
 
@@ -84,8 +85,9 @@ const giteeAdapter: PlatformAdapter = {
     const languagesResults = await Promise.all(
       unique.map(async (r) => {
         try {
-          const { data } = await client.get<Record<string, number>>(`/repos/${r.full_name}/languages`)
-          return data ?? {}
+          // Gitee 返回 { languages: [{ language, bytes, percent }] }，需归一化
+          const { data } = await client.get(`/repos/${r.full_name}/languages`)
+          return normalizeLanguageMap(data)
         }
         catch {
           return {}
@@ -134,23 +136,10 @@ const giteeAdapter: PlatformAdapter = {
     return [...prs, ...issues]
   },
 
-  async getRateLimit(token) {
-    // Gitee 无专门配额接口；用一次轻量请求读响应头填充
-    const client = createGiteeClient(token)
-    try {
-      const { headers } = await client.get('/user')
-      updateRateLimitFromHeaders('gitee', headers as Record<string, string | undefined>)
-    }
-    catch {
-      // ignore
-    }
-    const info = {
-      limit: 0,
-      remaining: 0,
-      resetAt: '',
-    }
-    setRateLimit('gitee', info)
-    return info
+  async getRateLimit() {
+    // Gitee v5 不提供独立的配额查询接口；配额信息只能从各响应的
+    // rate-limit-* 响应头被动读取（HTTP 拦截器已自动解析）。
+    return null
   },
 }
 
@@ -194,8 +183,10 @@ async function paginateGiteeItems(
 
 function mapRepo(r: GiteeRepo, languages: Record<string, number>, myLogin?: string): UnifiedRepo {
   const isOwned = r.owner.login.toLowerCase() === myLogin?.toLowerCase()
-  const isOrg = !isOwned && !!r.permission?.push && !r.fork
-  const isPrContributed = !isOwned && !isOrg && !r.fork
+  let role: UnifiedRepo['role']
+  if (isOwned) role = 'owned'
+  else if (r.fork) role = 'fork'
+  else role = 'organization'
   return {
     id: `gitee:${r.id}`,
     platform: 'gitee',
@@ -203,15 +194,15 @@ function mapRepo(r: GiteeRepo, languages: Record<string, number>, myLogin?: stri
     name: r.name,
     fullName: r.full_name,
     description: r.description,
-    language: r.language,
+    language: pickPrimaryLanguage(r.language, languages),
     languages,
     stargazersCount: r.stargazers_count,
     forksCount: r.forks_count,
     isPrivate: r.private,
     isFork: r.fork,
     isOwned,
-    isContributed: isOwned || isOrg || isPrContributed,
-    role: isOwned ? 'owned' : isOrg ? 'organization' : r.fork ? 'fork' : 'pr_contributed',
+    isContributed: true,
+    role,
     updatedAt: r.updated_at,
     htmlUrl: r.html_url,
   }

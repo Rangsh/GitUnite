@@ -13,25 +13,57 @@ export const rateLimitState = reactive<Record<Platform, RateLimitState | null>>(
   gitee: null,
 })
 
-export function updateRateLimitFromHeaders(
-  platform: Platform,
-  headers: Record<string, string | undefined>,
-) {
-  const get = (...keys: string[]) => {
-    for (const k of keys) {
-      const v = headers[k.toLowerCase()]
-      if (v !== undefined && v !== null) return v
-    }
-    return undefined
+type HeaderSource =
+  | Record<string, string | number | undefined | null>
+  | {
+    get?: (name: string) => unknown
+    toJSON?: () => Record<string, unknown>
   }
 
+/**
+ * 兼容 AxiosHeaders 与普通对象。
+ * AxiosHeaders 用原始大小写存 key（如 X-RateLimit-Limit），
+ * 直接用 headers['x-ratelimit-limit'] 会得到 undefined，必须走 get() 或按 key 忽略大小写查找。
+ */
+function readHeader(headers: HeaderSource, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    if (typeof headers.get === 'function') {
+      const v = headers.get(key)
+      if (v != null && v !== '') return String(v)
+    }
+  }
+
+  const plain: Record<string, unknown> =
+    typeof headers.toJSON === 'function'
+      ? headers.toJSON()
+      : (headers as Record<string, unknown>)
+
+  const normalized = new Map<string, string>()
+  for (const [k, v] of Object.entries(plain)) {
+    if (v == null || v === '') continue
+    // 跳过 AxiosHeaders 内部方法字段
+    if (typeof v === 'function') continue
+    normalized.set(k.toLowerCase(), String(v))
+  }
+
+  for (const key of keys) {
+    const v = normalized.get(key.toLowerCase())
+    if (v != null) return v
+  }
+  return undefined
+}
+
+export function updateRateLimitFromHeaders(
+  platform: Platform,
+  headers: HeaderSource,
+) {
   // GitHub: x-ratelimit-limit / x-ratelimit-remaining / x-ratelimit-reset (unix seconds)
   // Gitee:   rate-limit-limit / rate-limit-remaining / rate-limit-reset (unix seconds)
-  const limitRaw = get('x-ratelimit-limit', 'rate-limit-limit')
-  const remainingRaw = get('x-ratelimit-remaining', 'rate-limit-remaining')
-  const resetRaw = get('x-ratelimit-reset', 'rate-limit-reset')
+  const limitRaw = readHeader(headers, 'x-ratelimit-limit', 'rate-limit-limit')
+  const remainingRaw = readHeader(headers, 'x-ratelimit-remaining', 'rate-limit-remaining')
+  const resetRaw = readHeader(headers, 'x-ratelimit-reset', 'rate-limit-reset')
 
-  if (!limitRaw || !remainingRaw || !resetRaw) return
+  if (!limitRaw || remainingRaw == null || !resetRaw) return
 
   const limit = Number(limitRaw)
   const remaining = Number(remainingRaw)

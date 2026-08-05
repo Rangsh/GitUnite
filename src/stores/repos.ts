@@ -35,7 +35,12 @@ export const useReposStore = defineStore('repos', () => {
   const filtered = computed(() => {
     let list = repos.value
     if (filter.value !== 'all') list = list.filter(r => r.platform === filter.value)
-    if (contributedOnly.value) list = list.filter(r => r.isContributed)
+    // "仅我贡献过的"：以本地 commits 表中有该仓库的提交记录为准，
+    // 而不是依赖 API 返回的 isContributed 字段（该字段无法准确区分
+    // "组织成员但没提过代码" 与 "真正提过代码"）。
+    if (contributedOnly.value) {
+      list = list.filter(r => (commitCounts.value[r.id] ?? 0) > 0)
+    }
     if (language.value) list = list.filter(r => r.language === language.value)
     const kw = keyword.value.trim().toLowerCase()
     if (kw) {

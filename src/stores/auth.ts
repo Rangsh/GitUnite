@@ -3,6 +3,7 @@ import { useStorage } from '@vueuse/core'
 import { ref } from 'vue'
 import type { Platform, UnifiedUser } from '@/api/types'
 import { getAdapter } from '@/api'
+import { setRateLimit } from '@/api/rateLimit'
 import { db } from '@/db/schema'
 
 export interface RateLimitInfo {
@@ -86,6 +87,7 @@ export const useAuthStore = defineStore('auth', {
       clearToken(platform)
       this.users[platform] = null
       this.rateLimits[platform] = null
+      setRateLimit(platform, null)
       // 同步清除该平台的全部缓存数据
       await Promise.all([
         db.repos.where('platform').equals(platform).delete(),

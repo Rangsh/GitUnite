@@ -7,6 +7,7 @@ import {
 import { useMessage } from 'naive-ui'
 import { Github, Gitee } from '@/components/common/PlatformIcon'
 import { useAuthStore } from '@/stores/auth'
+import { rateLimitState } from '@/api/rateLimit'
 import type { Platform } from '@/api/types'
 
 const message = useMessage()
@@ -33,9 +34,6 @@ const platforms: Array<{ key: Platform, label: string, placeholder: string, link
 
 function user(platform: Platform) {
   return auth.user(platform)
-}
-function rateLimit(platform: Platform) {
-  return auth.rateLimit(platform)
 }
 function isConnected(platform: Platform) {
   return auth.isConnected(platform)
@@ -66,9 +64,13 @@ async function disconnect(platform: Platform) {
   message.info(`${platform === 'github' ? 'GitHub' : 'Gitee'} 已断开`)
 }
 
+// 直接从 HTTP 拦截器维护的响应式状态读取。
+// GitHub 另有 /rate_limit 主动刷新；Gitee 无独立接口，依赖响应头被动填充。
 const quotaText = computed(() => (platform: Platform) => {
-  const rl = rateLimit(platform)
-  if (!rl || !rl.limit) return '配额: 获取中…'
+  const rl = rateLimitState[platform]
+  if (!rl || !Number.isFinite(rl.limit) || rl.limit <= 0) {
+    return '配额: 获取中…'
+  }
   return `配额: ${rl.remaining}/${rl.limit}`
 })
 </script>

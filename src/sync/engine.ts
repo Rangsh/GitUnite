@@ -38,6 +38,10 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
     repos = await adapter.listRepos(token)
   }
   catch (err) {
+    if (options.signal?.aborted) {
+      sync.setProgress({ ...progress, phase: 'done', message: '已停止' })
+      return
+    }
     sync.setProgress({ ...progress, phase: 'error', message: `仓库列表拉取失败：${(err as Error).message}` })
     throw err
   }
@@ -162,10 +166,31 @@ async function syncRepo(
 
 export async function syncAll(options?: SyncOptions) {
   const auth = useAuthStore()
-  const tasks: Promise<void>[] = []
-  if (auth.tokens.github) tasks.push(syncPlatform('github', options))
-  if (auth.tokens.gitee) tasks.push(syncPlatform('gitee', options))
-  await Promise.allSettled(tasks)
+  const errors: Error[] = []
+
+  // 串行执行：先 GitHub 再 Gitee。
+  // 原因：两个平台的进度状态独立维护，但浏览器总出口带宽和用户注意力有限；
+  // 且 Gitee 代码明细同步会产生大量请求，与 GitHub 并发容易同时触发两边限流。
+  if (auth.tokens.github) {
+    try {
+      await syncPlatform('github', options)
+    }
+    catch (err) {
+      errors.push(err instanceof Error ? err : new Error(String(err)))
+    }
+  }
+  if (auth.tokens.gitee) {
+    try {
+      await syncPlatform('gitee', options)
+    }
+    catch (err) {
+      errors.push(err instanceof Error ? err : new Error(String(err)))
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(errors.map(e => e.message).join('；'))
+  }
 }
 
 /** 判断 Gitee 是否首次同步（尚无任何 cursor），用于首次提示 */

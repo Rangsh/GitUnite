@@ -6,6 +6,7 @@ import type {
   UnifiedUser,
 } from '../types'
 import { setRateLimit, updateRateLimitFromHeaders } from '../rateLimit'
+import { pickPrimaryLanguage, normalizeLanguageMap } from '../primaryLanguage'
 import { paginateAll } from '../paginate'
 import { createGithubClient } from './client'
 
@@ -69,7 +70,9 @@ const githubAdapter: PlatformAdapter = {
   async listRepos(token): Promise<UnifiedRepo[]> {
     const client = createGithubClient(token)
 
-    // 1. /user/repos 覆盖自有、组织、协作者仓库
+    // /user/repos 覆盖自有、协作者、组织成员仓库。
+    // 注：提过 PR 但不是协作者的外部仓库留到 M5 PR/Issue 统计阶段通过 Search API 补齐，
+    // 避免首次同步就消耗 Search 接口限流（30 次/分钟）导致整体卡住。
     const ownRepos = await paginateAll<GithubRepo>({
       http: client,
       url: '/user/repos',
@@ -80,21 +83,12 @@ const githubAdapter: PlatformAdapter = {
       },
     })
 
-    // 2. Search API 发现提过 PR 的仓库（Search 接口单独的速率限制，最多 1000 条，对个人用户足够）
-    const prRepos = await fetchPrContributedRepos(client)
-
-    // 3. 按 full_name 去重
-    const byFullName = new Map<string, GithubRepo>()
-    for (const r of ownRepos) byFullName.set(r.full_name.toLowerCase(), r)
-    for (const r of prRepos) byFullName.set(r.full_name.toLowerCase(), r)
-
-    // 4. 并发拉取 languages（受平台并发池限制）
-    const repos = [...byFullName.values()]
+    // 并发拉取 languages（受平台并发池限制）
     const languagesResults = await Promise.all(
-      repos.map(async (r) => {
+      ownRepos.map(async (r) => {
         try {
-          const { data } = await client.get<Record<string, number>>(`/repos/${r.full_name}/languages`)
-          return data ?? {}
+          const { data } = await client.get(`/repos/${r.full_name}/languages`)
+          return normalizeLanguageMap(data)
         }
         catch {
           return {}
@@ -103,8 +97,7 @@ const githubAdapter: PlatformAdapter = {
     )
 
     const me = await this.validateToken(token).catch(() => null)
-
-    return repos.map((r, i) => mapRepo(r, languagesResults[i], me?.login))
+    return ownRepos.map((r, i) => mapRepo(r, languagesResults[i], me?.login))
   },
 
   async listCommits(token, repo, userLogin, since?): Promise<UnifiedCommit[]> {
@@ -189,41 +182,6 @@ const githubAdapter: PlatformAdapter = {
   },
 }
 
-async function fetchPrContributedRepos(client: ReturnType<typeof createGithubClient>): Promise<GithubRepo[]> {
-  // 利用 search/issues 找我评论或创建过 PR 的仓库，再补拉仓库详情
-  const result = new Map<string, GithubRepo>()
-  const queries = [
-    'is:pr author:@me',
-  ]
-  for (const q of queries) {
-    let page = 1
-    while (page <= 10) {
-      const { data } = await client.get<{
-        items: Array<{ repository_url: string }>
-      }>('/search/issues', {
-        params: { q, per_page: 100, page },
-      })
-      const items = data.items ?? []
-      for (const it of items) {
-        const match = it.repository_url.match(/\/repos\/(.+)$/)
-        if (!match) continue
-        const fullName = match[1]
-        if (result.has(fullName.toLowerCase())) continue
-        try {
-          const { data: repo } = await client.get<GithubRepo>(`/repos/${fullName}`)
-          result.set(fullName.toLowerCase(), repo)
-        }
-        catch {
-          // 忽略无权限/已删除仓库
-        }
-      }
-      if (items.length < 100) break
-      page++
-    }
-  }
-  return [...result.values()]
-}
-
 async function searchIssues(
   client: ReturnType<typeof createGithubClient>,
   q: string,
@@ -265,9 +223,13 @@ async function searchIssues(
 
 function mapRepo(r: GithubRepo, languages: Record<string, number>, myLogin?: string): UnifiedRepo {
   const isOwned = r.owner.login.toLowerCase() === myLogin?.toLowerCase()
-  const isOrg = !isOwned && !!r.permissions?.push && !r.fork
-  // PR 贡献仓库：不是自有、无 push 权限（只读）
-  const isPrContributed = !isOwned && !isOrg && !r.fork && r.permissions?.pull === true && !r.permissions?.push
+  // /user/repos?affiliation=owner,collaborator,organization_member 返回的都是
+  // 当前用户有权限的仓库，因此 isContributed 全部为 true。
+  // 角色细化用于展示标签，不影响筛选。
+  let role: UnifiedRepo['role']
+  if (isOwned) role = 'owned'
+  else if (r.fork) role = 'fork'
+  else role = 'organization'
   return {
     id: `github:${r.id}`,
     platform: 'github',
@@ -275,15 +237,15 @@ function mapRepo(r: GithubRepo, languages: Record<string, number>, myLogin?: str
     name: r.name,
     fullName: r.full_name,
     description: r.description,
-    language: r.language,
+    language: pickPrimaryLanguage(r.language, languages),
     languages,
     stargazersCount: r.stargazers_count,
     forksCount: r.forks_count,
     isPrivate: r.private,
     isFork: r.fork,
     isOwned,
-    isContributed: isOwned || isOrg || isPrContributed,
-    role: isOwned ? 'owned' : isOrg ? 'organization' : r.fork ? 'fork' : 'pr_contributed',
+    isContributed: true,
+    role,
     updatedAt: r.updated_at,
     htmlUrl: r.html_url,
   }
