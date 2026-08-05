@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NCard, NSwitch, NSpace, NText } from 'naive-ui'
+import { storeToRefs } from 'pinia'
+import { NCard, NSwitch, NSpace, NText, NInput } from 'naive-ui'
+import { useUiStore } from '@/stores/ui'
 
-const codeDetailEnabled = ref(true)
-const autoIncrementalSync = ref(true)
-const timezone = ref('')
-
-// TODO: 接入 ui store，读写 LocalStorage；切换代码明细开关时触发补全同步
+const ui = useUiStore()
+const { codeDetailEnabled, autoIncrementalSync, timezone } = storeToRefs(ui)
 </script>
 
 <template>

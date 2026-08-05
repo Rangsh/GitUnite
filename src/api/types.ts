@@ -91,7 +91,7 @@ export interface PlatformAdapter {
   /** 拉取当前用户的全部仓库（含私有、组织、fork） */
   listRepos(token: string): Promise<UnifiedRepo[]>
 
-  /** 拉取指定仓库中当前用户的提交明细 */
+  /** 拉取指定仓库中当前用户的提交明细（不含逐提交的代码行统计） */
   listCommits(
     token: string,
     repo: UnifiedRepo,
@@ -99,12 +99,19 @@ export interface PlatformAdapter {
     since?: string,
   ): Promise<UnifiedCommit[]>
 
+  /** 拉取单个提交的详情，补齐 additions/deletions/filesChanged（成本较高，按需调用） */
+  getCommitDetail?(
+    token: string,
+    repo: UnifiedRepo,
+    sha: string,
+  ): Promise<{ additions: number, deletions: number, filesChanged: number } | null>
+
   /** 拉取指定仓库的按周聚合代码量（GitHub 支持，Gitee 不支持） */
   getWeeklyStats?(
     token: string,
     repo: UnifiedRepo,
     userLogin: string,
-  ): Promise<{ additions: number; deletions: number; weeks: { w: string; a: number; d: number; c: number }[] } | null>
+  ): Promise<{ additions: number; deletions: number; weeks: { w: number, a: number; d: number, c: number }[] } | null>
 
   /** 拉取指定仓库中当前用户的 PR / Issue */
   listPullRequestsAndIssues?(
