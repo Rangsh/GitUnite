@@ -10,6 +10,12 @@ export interface SyncOptions {
   signal?: AbortSignal
   /** 仅同步这些仓库；不传则同步全部 */
   repoIds?: string[]
+  /**
+   * 轻量增量：只同步最近 N 天内有更新的仓库（默认 30 天）。
+   * 启动自动同步时使用，避免对长期不活跃的仓库发起请求。
+   */
+  recentOnly?: boolean
+  recentDays?: number
 }
 
 export async function syncPlatform(platform: Platform, options: SyncOptions = {}): Promise<void> {
@@ -51,17 +57,29 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
     repos = repos.filter(r => set.has(r.id))
   }
 
+  // 仓库列表始终全量落库（含不活跃仓库），保证仓库页完整
   await repoRepo.bulkPut(repos)
   progress.total = repos.length
   sync.setProgress({ ...progress })
 
+  // 轻量增量：只对最近 N 天内更新过的仓库拉取提交
+  let reposToSync = repos
+  if (options.recentOnly) {
+    const days = options.recentDays ?? 30
+    const threshold = Date.now() - days * 86400_000
+    reposToSync = repos.filter(r => new Date(r.updatedAt).getTime() >= threshold)
+    progress.total = reposToSync.length
+    progress.message = `[${platform}] 增量同步 ${reposToSync.length} 个近期活跃仓库…`
+    sync.setProgress({ ...progress })
+  }
+
   // 2. 逐仓库同步提交（HTTP 层已有并发池，这里串行调度即可）
-  for (let i = 0; i < repos.length; i++) {
+  for (let i = 0; i < reposToSync.length; i++) {
     if (options.signal?.aborted) break
-    const repo = repos[i]
+    const repo = reposToSync[i]
     progress.current = i
     progress.phase = 'commits'
-    progress.message = `[${platform}] ${i + 1}/${repos.length} ${repo.fullName}`
+    progress.message = `[${platform}] ${i + 1}/${reposToSync.length} ${repo.fullName}`
     sync.setProgress({ ...progress })
 
     try {
@@ -80,8 +98,8 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
   sync.setProgress({
     platform,
     phase: 'done',
-    total: repos.length,
-    current: repos.length,
+    total: reposToSync.length,
+    current: reposToSync.length,
     message: '同步完成',
   })
 }
@@ -197,4 +215,12 @@ export async function syncAll(options?: SyncOptions) {
 export async function isGiteeFirstSync(): Promise<boolean> {
   const count = await db.cursors.where('platform').equals('gitee').count()
   return count === 0
+}
+
+/**
+ * 是否已经做过至少一次同步（存在任意游标）。
+ * 启动自动增量只在已有数据时运行，避免首次打开就触发耗时的全量同步。
+ */
+export async function hasPreviouslySynced(): Promise<boolean> {
+  return await db.cursors.count() > 0
 }

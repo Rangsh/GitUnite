@@ -8,18 +8,27 @@ import type { Platform } from '@/api/types'
 
 const abortController = ref<AbortController | null>(null)
 
+export interface StartOptions {
+  /** 静默模式：不弹 Gitee 首次提示、不弹成功/失败 toast（启动自动同步用） */
+  silent?: boolean
+  /** 轻量增量：只同步近 N 天活跃的仓库 */
+  recentOnly?: boolean
+  recentDays?: number
+}
+
 export function useSync() {
   const syncStore = useSyncStore()
   const uiStore = useUiStore()
   const { running } = storeToRefs(syncStore)
   const activeProgress = computed(() => syncStore.activeProgress)
 
-  async function start(platform?: Platform) {
+  async function start(platform?: Platform, options: StartOptions = {}) {
     if (running.value) return
 
-    // Gitee 首次同步且代码明细开启时，弹窗告知耗时风险
+    // 非静默模式下，Gitee 首次同步且代码明细开启时弹窗告知耗时风险
     if (
-      uiStore.codeDetailEnabled
+      !options.silent
+      && uiStore.codeDetailEnabled
       && (platform === 'gitee' || platform === undefined)
       && await isGiteeFirstSync()
     ) {
@@ -32,28 +41,35 @@ export function useSync() {
         // 注意：不要 await doStart()，否则对话框会一直 loading 到整个同步结束才关闭。
         // 同步在后台执行，进度由 syncStore / message 展示。
         onPositiveClick: () => {
-          void doStart(platform)
+          void doStart(platform, options)
         },
       })
       return
     }
 
-    await doStart(platform)
+    await doStart(platform, options)
   }
 
-  async function doStart(platform?: Platform) {
+  async function doStart(platform?: Platform, options: StartOptions = {}) {
     abortController.value = new AbortController()
     try {
-      if (platform) await syncPlatform(platform, { signal: abortController.value.signal })
-      else await syncAll({ signal: abortController.value.signal })
+      const syncOpts = {
+        signal: abortController.value.signal,
+        recentOnly: options.recentOnly,
+        recentDays: options.recentDays,
+      }
+      if (platform) await syncPlatform(platform, syncOpts)
+      else await syncAll(syncOpts)
 
-      if (!abortController.value?.signal.aborted) {
+      if (!abortController.value?.signal.aborted && !options.silent) {
         message.success('同步完成')
       }
     }
     catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
-      message.error(`同步失败：${(err as Error).message}`)
+      if (!options.silent) {
+        message.error(`同步失败：${(err as Error).message}`)
+      }
     }
     finally {
       abortController.value = null
