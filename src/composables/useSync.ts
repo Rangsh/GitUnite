@@ -6,6 +6,7 @@ import { useAnalyticsStore } from '@/stores/analytics'
 import { isGiteeFirstSync, syncAll, syncPlatform } from '@/sync/engine'
 import { tryAcquireSyncLock } from '@/sync/syncLock'
 import { dialog, message } from '@/composables/useFeedback'
+import { t } from '@/i18n'
 import type { Platform } from '@/api/types'
 
 const abortController = ref<AbortController | null>(null)
@@ -32,7 +33,7 @@ export function useSync() {
     // 本页已在同步：自动增量与手动点击共用同一把状态
     if (running.value) {
       if (!options.silent) {
-        message.info('正在同步中（含打开应用后的后台增量），请稍候完成后再试')
+        message.info(t('syncMsg.busy'))
       }
       return
     }
@@ -45,11 +46,10 @@ export function useSync() {
       && await isGiteeFirstSync()
     ) {
       dialog.warning({
-        title: 'Gitee 代码明细同步提示',
-        content:
-          'Gitee 平台不提供代码行聚合接口，开启代码明细同步后需要逐个提交请求详情，耗时较长且容易触发限流。\n\n建议在「设置 - 同步选项」中保持关闭；仅在确实需要增删行统计时开启。本次同步仍会限制明细请求数量以保护账号。',
-        positiveText: '我知道了，开始同步',
-        negativeText: '暂不同步',
+        title: t('syncMsg.giteeDetailTitle'),
+        content: t('syncMsg.giteeDetailBody'),
+        positiveText: t('syncMsg.giteeDetailOk'),
+        negativeText: t('syncMsg.giteeDetailCancel'),
         // 注意：不要 await doStart()，否则对话框会一直 loading 到整个同步结束才关闭。
         onPositiveClick: () => {
           void doStart(platform, options)
@@ -69,8 +69,8 @@ export function useSync() {
       if (!options.silent) {
         message.warning(
           running.value
-            ? '正在同步中，请稍候'
-            : '同步锁被占用（可能有其他标签页在同步，或后台增量未结束）。请稍候、关闭多余标签页，或刷新本页后再试',
+            ? t('syncMsg.busyWait')
+            : t('syncMsg.lockBusy'),
         )
       }
       return
@@ -89,7 +89,7 @@ export function useSync() {
       else await syncAll(syncOpts)
 
       if (!abortController.value?.signal.aborted) {
-        if (!options.silent) message.success('同步完成')
+        if (!options.silent) message.success(t('syncMsg.done'))
         // 后台刷新看板，不阻塞同步收尾；refresh 内部用 shallowRef，避免卡住路由
         void useAnalyticsStore().refresh()
       }
@@ -109,7 +109,7 @@ export function useSync() {
         return
       }
       if (!options.silent) {
-        message.error(`同步失败：${(err as Error).message}`)
+        message.error(t('syncMsg.failed', { message: (err as Error).message }))
       }
     }
     finally {
@@ -120,7 +120,7 @@ export function useSync() {
 
   function stop() {
     abortController.value?.abort()
-    message.info('已停止同步')
+    message.info(t('syncMsg.stopped'))
   }
 
   return {

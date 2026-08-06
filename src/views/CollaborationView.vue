@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import {
   NButton, NEmpty, NSpin, NSwitch, NDrawer, NDrawerContent,
@@ -18,6 +19,7 @@ import { createTzHelpers, formatNumber } from '@/utils/date'
 import { ForceGraph } from '@/components/charts'
 import { Github, Gitee } from '@/components/common/PlatformIcon'
 
+const { t } = useI18n()
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const auth = useAuthStore()
@@ -82,15 +84,15 @@ watch(
 const hasData = computed(() => analytics.commits.length > 0)
 
 const scopeTabs = computed(() => [
-  { label: '聚合', value: 'all' as const },
-  { label: 'GitHub', value: 'github' as const, disabled: !auth.isConnected('github') },
-  { label: 'Gitee', value: 'gitee' as const, disabled: !auth.isConnected('gitee') },
+  { label: t('common.aggregate'), value: 'all' as const },
+  { label: t('common.github'), value: 'github' as const, disabled: !auth.isConnected('github') },
+  { label: t('common.gitee'), value: 'gitee' as const, disabled: !auth.isConnected('gitee') },
 ])
 
 const syncLabel = computed(() => {
-  if (scope.value === 'github') return '同步 GitHub'
-  if (scope.value === 'gitee') return '同步 Gitee'
-  return '同步全部'
+  if (scope.value === 'github') return t('collaboration.syncLabelGithub')
+  if (scope.value === 'gitee') return t('collaboration.syncLabelGitee')
+  return t('collaboration.syncLabelAll')
 })
 function syncByScope() {
   if (scope.value === 'all') void start()
@@ -112,6 +114,12 @@ function onSelectCollaborator(key: string) {
 
 const drawerCollaborator = computed(() =>
   graph.value?.collaborators.find(c => c.key === drawerKey.value) ?? null)
+
+const drawerTitle = computed(() =>
+  drawerCollaborator.value
+    ? t('collaboration.commitsWith', { name: drawerCollaborator.value.name })
+    : t('collaboration.drawerTitle'),
+)
 
 const drawerCommits = computed(() => {
   if (!drawerKey.value || !graph.value) return []
@@ -146,9 +154,9 @@ function firstLine(msg: string) {
         <p class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700">
           <Network :size="13" /> Collaboration Graph
         </p>
-        <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900">协作网络</h1>
+        <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900">{{ t('collaboration.title') }}</h1>
         <p class="mt-1.5 text-sm text-ink-500">
-          以你为中心：仓库按提交数定大小，协作者按共同提交数定大小
+          {{ t('collaboration.subtitle') }}
         </p>
       </div>
       <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
@@ -162,7 +170,7 @@ function firstLine(msg: string) {
         v-if="!hasData && !analytics.loading && !computing"
         class="rounded-2xl border border-dashed border-ink-200 bg-white/70 px-6 py-20 text-center"
       >
-        <NEmpty description="还没有提交数据。同步后在此展示协作关系图。">
+        <NEmpty :description="t('collaboration.empty')">
           <template #extra>
             <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
               {{ syncLabel }}
@@ -177,46 +185,46 @@ function firstLine(msg: string) {
             <div class="flex flex-wrap items-center gap-3">
               <div class="inline-flex rounded-lg border border-ink-200 bg-ink-50 p-0.5">
                 <button
-                  v-for="t in scopeTabs"
-                  :key="t.value"
+                  v-for="tab in scopeTabs"
+                  :key="tab.value"
                   type="button"
                   class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                  :class="scope === t.value
+                  :class="scope === tab.value
                     ? 'bg-white text-ink-900 shadow-sm'
-                    : t.disabled
+                    : tab.disabled
                       ? 'cursor-not-allowed text-ink-300'
                       : 'text-ink-500 hover:bg-ink-50'"
-                  :disabled="t.disabled"
-                  @click="scope = t.value"
+                  :disabled="tab.disabled"
+                  @click="scope = tab.value"
                 >
-                  {{ t.label }}
+                  {{ tab.label }}
                 </button>
               </div>
               <label class="flex cursor-pointer select-none items-center gap-2 text-xs text-ink-600">
                 <NSwitch v-model:value="includeCollaborators" size="small" />
-                <span class="flex items-center gap-1"><Users :size="13" /> 显示协作者</span>
+                <span class="flex items-center gap-1"><Users :size="13" /> {{ t('collaboration.includeCollab') }}</span>
               </label>
             </div>
 
             <div class="flex items-center gap-3 text-xs text-ink-500">
-              <span>{{ formatNumber(graph.repos.length) }} 仓库</span>
+              <span>{{ t('collaboration.reposCount', { count: formatNumber(graph.repos.length) }) }}</span>
               <span class="text-ink-200">·</span>
-              <span>{{ formatNumber(graph.collaborators.length) }} 协作者</span>
+              <span>{{ t('collaboration.collabCount', { count: formatNumber(graph.collaborators.length) }) }}</span>
               <NTooltip v-if="graph.truncated.collaborators > 0">
                 <template #trigger>
                   <NTag size="small" type="warning" :bordered="false" class="!rounded-lg">
-                    已截断 {{ graph.truncated.collaborators }} 人
+                    {{ t('collaboration.truncated', { count: graph.truncated.collaborators }) }}
                   </NTag>
                 </template>
-                为保证流畅，仅展示共同提交最多的 60 位协作者
+                {{ t('collaboration.truncatedHint') }}
               </NTooltip>
               <NTooltip v-if="graph.collaboratorsUnavailable">
                 <template #trigger>
                   <NTag size="small" type="info" :bordered="false" class="!rounded-lg">
-                    仅仓库图
+                    {{ t('collaboration.onlyRepoGraph') }}
                   </NTag>
                 </template>
-                同步默认只拉取当前用户作为 author 的提交以控制 API 配额，本地缓存中通常没有其他作者，因此协作者节点为空。仓库关系图仍可用。
+                {{ t('collaboration.onlyRepoGraphHint') }}
               </NTooltip>
             </div>
           </div>
@@ -232,15 +240,15 @@ function firstLine(msg: string) {
 
           <div class="flex flex-wrap items-center gap-4 border-t border-ink-100 px-5 py-3 text-xs text-ink-400">
             <span class="flex items-center gap-1.5">
-              <span class="inline-block h-2.5 w-2.5 rounded-full bg-brand-600" /> 我
+              <span class="inline-block h-2.5 w-2.5 rounded-full bg-brand-600" /> {{ t('collaboration.legendMe') }}
             </span>
             <span class="flex items-center gap-1.5">
-              <span class="inline-block h-2.5 w-2.5 rounded-full bg-slate-500" /> 仓库（单击高亮关联协作者）
+              <span class="inline-block h-2.5 w-2.5 rounded-full bg-slate-500" /> {{ t('collaboration.legendRepo') }}
             </span>
             <span class="flex items-center gap-1.5">
-              <span class="inline-block h-2.5 w-2.5 rounded-full bg-sky-500" /> 协作者（双击查看共同提交）
+              <span class="inline-block h-2.5 w-2.5 rounded-full bg-sky-500" /> {{ t('collaboration.legendCollab') }}
             </span>
-            <span class="ml-auto">滚轮缩放 · 拖拽节点 · 空白处拖动画布</span>
+            <span class="ml-auto">{{ t('collaboration.legendControls') }}</span>
           </div>
         </section>
 
@@ -253,14 +261,14 @@ function firstLine(msg: string) {
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-semibold text-ink-900">{{ selectedRepo.fullName }}</div>
             <div class="mt-0.5 text-xs text-ink-500">
-              {{ selectedRepo.language || '未知语言' }}
+              {{ selectedRepo.language || t('collaboration.unknownLanguage') }}
               <template v-if="selectedRepo.stargazersCount">
                 · ★ {{ formatNumber(selectedRepo.stargazersCount) }}
               </template>
             </div>
           </div>
           <NTag size="small" type="info" :bordered="false" class="!rounded-lg">
-            我的提交 {{ formatNumber(graph?.nodes.find(n => n.id === selectedRepo?.id)?.value ?? 0) }}
+            {{ t('collaboration.myCommits', { count: formatNumber(graph?.nodes.find(n => n.id === selectedRepo?.id)?.value ?? 0) }) }}
           </NTag>
           <NButton
             size="small"
@@ -268,7 +276,7 @@ function firstLine(msg: string) {
             class="!rounded-lg"
             @click="selectedRepoId = null"
           >
-            取消选中
+            {{ t('collaboration.clearSelection') }}
           </NButton>
           <NButton
             size="small"
@@ -279,7 +287,7 @@ function firstLine(msg: string) {
             class="!rounded-lg"
           >
             <template #icon><ExternalLink :size="13" /></template>
-            打开仓库
+            {{ t('collaboration.openRepo') }}
           </NButton>
         </section>
       </div>
@@ -288,20 +296,20 @@ function firstLine(msg: string) {
     <!-- 协作者共同提交抽屉 -->
     <NDrawer v-model:show="drawerShow" :width="520" placement="right">
       <NDrawerContent
-        :title="drawerCollaborator ? `${drawerCollaborator.name} 的共同提交` : '共同提交'"
+        :title="drawerTitle"
         closable
       >
         <template v-if="drawerCollaborator">
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <NTag size="small" type="info" :bordered="false" class="!rounded-lg">
-              {{ drawerCollaborator.sharedCommits }} 次共同提交
+              {{ t('collaboration.sharedCommitsCount', { count: drawerCollaborator.sharedCommits }) }}
             </NTag>
             <NTag size="small" :bordered="false" class="!rounded-lg">
-              涉及 {{ drawerCollaborator.sharedRepoIds.length }} 个仓库
+              {{ t('collaboration.sharedReposCount', { count: drawerCollaborator.sharedRepoIds.length }) }}
             </NTag>
           </div>
           <NText depth="3" class="mb-3 block text-xs">
-            以下为该协作者在与你共同仓库中的提交记录（读取自本地缓存，不额外请求接口）。
+            {{ t('collaboration.drawerHint') }}
           </NText>
 
           <div v-if="drawerCommits.length" class="space-y-2">
@@ -335,7 +343,7 @@ function firstLine(msg: string) {
               </div>
             </div>
           </div>
-          <NEmpty v-else description="没有可展示的共同提交" class="py-12" />
+          <NEmpty v-else :description="t('collaboration.noSharedCommits')" class="py-12" />
         </template>
       </NDrawerContent>
     </NDrawer>

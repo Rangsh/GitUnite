@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { NButton, NPopconfirm, NText } from 'naive-ui'
 import { clearEtagCache } from '@/api/http'
 import { db } from '@/db/schema'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useAuthStore } from '@/stores/auth'
 import { message } from '@/composables/useFeedback'
+
+const { t } = useI18n()
 
 async function clearAll() {
   const auth = useAuthStore()
@@ -23,7 +26,7 @@ async function clearAll() {
   ])
   clearEtagCache()
   useAnalyticsStore().reset()
-  message.success('已清除全部本地数据，即将刷新页面')
+  message.success(t('danger.cleared'))
   setTimeout(() => location.reload(), 800)
 }
 </script>
@@ -31,17 +34,17 @@ async function clearAll() {
 <template>
   <section class="overflow-hidden rounded-2xl border border-red-200/80 bg-white shadow-panel">
     <div class="border-b border-red-100 px-5 py-4">
-      <h2 class="m-0 text-base font-semibold text-red-600">危险操作</h2>
+      <h2 class="m-0 text-base font-semibold text-red-600">{{ t('danger.title') }}</h2>
       <p class="mt-1 text-xs text-ink-400">
-        将删除 Token、仓库、提交、游标、周统计与成就徽章，不可恢复。
+        {{ t('danger.desc') }}
       </p>
     </div>
     <div class="px-5 py-4">
       <NPopconfirm @positive-click="clearAll">
         <template #trigger>
-          <NButton type="error" ghost class="!rounded-xl">清除全部本地数据</NButton>
+          <NButton type="error" ghost class="!rounded-xl">{{ t('danger.clearBtn') }}</NButton>
         </template>
-        <NText>确定清除全部本地数据？此操作不可撤销。</NText>
+        <NText>{{ t('danger.clearConfirm') }}</NText>
       </NPopconfirm>
     </div>
   </section>

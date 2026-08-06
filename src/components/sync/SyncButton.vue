@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NButton, NTag, NSpace } from 'naive-ui'
 import { RefreshCw } from 'lucide-vue-next'
 import { useSync } from '@/composables/useSync'
@@ -7,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ platform?: 'github' | 'gitee' }>()
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const { progress, running, start, stop } = useSync()
 
@@ -16,8 +18,13 @@ const disabled = computed(() => {
 })
 
 const label = computed(() => {
-  if (running.value) return '同步中…'
-  return props.platform ? `同步 ${props.platform === 'github' ? 'GitHub' : 'Gitee'}` : '一键同步'
+  if (running.value) return t('common.syncing')
+  if (props.platform) {
+    return t('common.syncPlatform', {
+      name: props.platform === 'github' ? t('common.github') : t('common.gitee'),
+    })
+  }
+  return t('common.syncOne')
 })
 </script>
 
@@ -35,7 +42,7 @@ const label = computed(() => {
       {{ label }}
     </NButton>
     <NButton v-if="running" quaternary size="small" @click="stop">
-      停止
+      {{ t('common.stop') }}
     </NButton>
     <NTag
       v-if="progress"

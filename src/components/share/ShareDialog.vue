@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NModal, NSwitch, NButton, NAlert, NSpin, NText,
 } from 'naive-ui'
@@ -17,6 +18,7 @@ import ShareCard from './ShareCard.vue'
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
 
+const { t } = useI18n()
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const auth = useAuthStore()
@@ -49,7 +51,7 @@ const shareData = computed(() => {
   // 优先 GitHub 身份，否则 Gitee
   const gh = auth.user('github')
   const gt = auth.user('gitee')
-  const nickname = gh?.name || gh?.login || gt?.name || gt?.login || '开发者'
+  const nickname = gh?.name || gh?.login || gt?.name || gt?.login || 'Developer'
 
   return {
     avatarUrl: avatarDataUrl.value,
@@ -118,7 +120,7 @@ async function download() {
     generating.value = true
     const blob = await renderPng()
     if (!blob) {
-      message.error('生成分享卡片失败，请稍后重试')
+      message.error(t('share.genFail'))
       return
     }
     const url = URL.createObjectURL(blob)
@@ -127,11 +129,11 @@ async function download() {
     a.download = `gitunite-share-${year.value}.png`
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    message.success('已开始下载 PNG')
+    message.success(t('share.downloadOk'))
   }
   catch (e) {
     console.error('[share] download failed', e)
-    message.error(`下载失败：${(e as Error).message}`)
+    message.error(t('share.downloadFail', { message: (e as Error).message }))
   }
   finally {
     generating.value = false
@@ -143,20 +145,20 @@ async function copy() {
     generating.value = true
     const blob = await renderPng()
     if (!blob) {
-      message.error('生成分享卡片失败，请稍后重试')
+      message.error(t('share.genFail'))
       return
     }
     if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
-      throw new Error('当前浏览器不支持剪贴板写入图片')
+      throw new Error('Clipboard image write not supported')
     }
     await navigator.clipboard.write([
       new ClipboardItem({ 'image/png': blob }),
     ])
-    message.success('已复制到剪贴板')
+    message.success(t('share.copyOk'))
   }
   catch (e) {
     console.error('[share] copy failed', e)
-    message.error(`复制失败：${(e as Error).message}`)
+    message.error(t('share.copyFail', { message: (e as Error).message }))
   }
   finally {
     generating.value = false
@@ -171,18 +173,18 @@ async function copy() {
     style="width: 720px; max-width: 94vw;"
     :bordered="false"
     preset="card"
-    title="生成分享卡片"
+    :title="t('share.title')"
   >
     <div class="space-y-4">
       <NAlert type="warning" :show-icon="true" class="!rounded-xl">
         <template #icon><ShieldAlert :size="16" /></template>
-        卡片将包含你的头像和昵称，请勿在不希望暴露身份的场合分享。
+        {{ t('share.privacyAlert') }}
       </NAlert>
 
       <label class="flex cursor-pointer items-center justify-between rounded-xl border border-ink-200 bg-ink-50/60 px-4 py-3">
         <span class="flex items-center gap-2 text-sm text-ink-700">
           <EyeOff :size="15" class="text-ink-400" />
-          隐藏头像与昵称
+          {{ t('share.hideIdentity') }}
         </span>
         <NSwitch v-model:value="hideIdentity" />
       </label>
@@ -199,14 +201,14 @@ async function copy() {
       </div>
 
       <div class="flex items-center justify-end gap-2 pt-1">
-        <NText depth="3" class="mr-auto text-xs">导出为 1200×630 PNG</NText>
+        <NText depth="3" class="mr-auto text-xs">{{ t('share.previewHint') }}</NText>
         <NButton class="!rounded-lg" @click="copy">
           <template #icon><Copy :size="15" /></template>
-          复制到剪贴板
+          {{ t('share.copyClipboard') }}
         </NButton>
         <NButton type="primary" class="!rounded-lg" :loading="generating" @click="download">
           <template #icon><Download :size="15" /></template>
-          下载 PNG
+          {{ t('share.downloadPng') }}
         </NButton>
       </div>
     </div>

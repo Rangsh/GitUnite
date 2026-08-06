@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import {
   NButton, NEmpty, NSpin, NRadioGroup, NRadio, NInput,
@@ -18,6 +19,7 @@ import { createTzHelpers, formatNumber, resolveTimezone, dayjs } from '@/utils/d
 import { HeatmapChart } from '@/components/charts'
 import { Github, Gitee } from '@/components/common/PlatformIcon'
 
+const { t } = useI18n()
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const auth = useAuthStore()
@@ -121,12 +123,22 @@ function syncByScope() {
 }
 
 const syncLabel = computed(() => {
-  if (scope.value === 'github') return '同步 GitHub'
-  if (scope.value === 'gitee') {
-    return dataProvenance.value.gitee === 0 ? '全量同步 Gitee' : '同步 Gitee'
-  }
-  return dataProvenance.value.gitee === 0 ? '同步全部（含 Gitee 全量）' : '同步全部'
+  if (scope.value === 'github') return t('common.syncPlatform', { name: t('common.github') })
+  if (scope.value === 'gitee') return t('common.syncPlatform', { name: t('common.gitee') })
+  return t('common.syncOne')
 })
+
+const scopeTabs = computed(() => [
+  { v: 'all' as const, l: t('common.aggregate'), d: false },
+  { v: 'github' as const, l: t('common.github'), d: !auth.isConnected('github') },
+  { v: 'gitee' as const, l: t('common.gitee'), d: !auth.isConnected('gitee') },
+])
+
+const drawerHeading = computed(() =>
+  selectedDate.value
+    ? `${selectedDate.value}`
+    : t('timeline.dayDetail'),
+)
 
 function onSelectDate(date: string) {
   selectedDate.value = date
@@ -226,7 +238,12 @@ const yearOptions = computed(() => {
   return [current, current - 1, current - 2, current - 3]
 })
 
-const rangeLabel = computed(() => `${selectedYear.value} 年`)
+const rangeLabel = computed(() => t('timeline.yearLabel', { year: selectedYear.value }))
+
+const metricTabs = computed(() => [
+  { v: 'commits' as const, l: t('timeline.metricCommits') },
+  { v: 'code' as const, l: t('timeline.metricCode') },
+])
 </script>
 
 <template>
@@ -236,9 +253,9 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
         <p class="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700">
           Commit Timeline
         </p>
-        <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900">提交时间轴</h1>
+        <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900">{{ t('timeline.title') }}</h1>
         <p class="mt-1.5 text-sm text-ink-500">
-          按本地时区归桶；点击日期查看当天真实提交
+          {{ t('timeline.subtitle') }}
         </p>
       </div>
       <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
@@ -252,14 +269,14 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
         v-if="!hasData && !analytics.loading && !computing"
         class="rounded-2xl border border-dashed border-ink-200 bg-white/70 px-6 py-16 text-center"
       >
-        <NEmpty description="还没有提交数据。请按当前视角做一次全量同步。">
+        <NEmpty :description="t('timeline.empty')">
           <template #extra>
             <div class="mt-3 flex flex-col items-center gap-2">
               <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
                 {{ syncLabel }}
               </NButton>
               <NButton v-if="!auth.anyConnected" quaternary size="small" @click="$router.push('/settings')">
-                去设置连接账号
+                {{ t('common.goToSettings') }}
               </NButton>
             </div>
           </template>
@@ -268,14 +285,16 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
 
       <div v-else-if="hasData" class="space-y-4">
         <section class="rounded-2xl border border-ink-200/80 bg-white px-5 py-4 shadow-panel">
-          <div class="text-sm font-semibold text-ink-900">数据来源</div>
+          <div class="text-sm font-semibold text-ink-900">{{ t('timeline.dataSource') }}</div>
           <p class="mt-1 text-xs text-ink-500">
-            热力图与抽屉均读取本地 IndexedDB 中的真实提交；GitHub 单条增删行来自周聚合分摊，列表接口本身不带 stats。
+            {{ t('timeline.dataSourceHint') }}
           </p>
           <div class="gu-metric mt-2 text-xs text-ink-600">
-            GitHub {{ formatNumber(dataProvenance.github) }} 提交 ·
-            Gitee {{ formatNumber(dataProvenance.gitee) }} 提交 ·
-            有提交的天数 {{ dataProvenance.days }}
+            {{ t('timeline.provenanceSummary', {
+              github: formatNumber(dataProvenance.github),
+              gitee: formatNumber(dataProvenance.gitee),
+              days: dataProvenance.days,
+            }) }}
           </div>
         </section>
 
@@ -284,10 +303,7 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
             <div class="flex flex-wrap items-center gap-3">
               <div class="inline-flex rounded-lg border border-ink-200 bg-ink-50 p-0.5">
                 <button
-                  v-for="m in ([
-                    { v: 'commits', l: '提交频次' },
-                    { v: 'code', l: '代码量' },
-                  ] as const)"
+                  v-for="m in metricTabs"
                   :key="m.v"
                   type="button"
                   class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
@@ -299,21 +315,17 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
               </div>
               <div class="inline-flex rounded-lg border border-ink-200 bg-white p-0.5">
                 <button
-                  v-for="t in ([
-                    { v: 'all', l: '聚合', d: false },
-                    { v: 'github', l: 'GitHub', d: !auth.isConnected('github') },
-                    { v: 'gitee', l: 'Gitee', d: !auth.isConnected('gitee') },
-                  ] as const)"
-                  :key="t.v"
+                  v-for="tab in scopeTabs"
+                  :key="tab.v"
                   type="button"
                   class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                  :class="scope === t.v
+                  :class="scope === tab.v
                     ? 'bg-ink-900 text-white'
-                    : t.d ? 'cursor-not-allowed text-ink-300' : 'text-ink-500 hover:bg-ink-50'"
-                  :disabled="t.d"
-                  @click="scope = t.v"
+                    : tab.d ? 'cursor-not-allowed text-ink-300' : 'text-ink-500 hover:bg-ink-50'"
+                  :disabled="tab.d"
+                  @click="scope = tab.v"
                 >
-                  {{ t.l }}
+                  {{ tab.l }}
                 </button>
               </div>
               <div class="inline-flex rounded-lg border border-ink-200 bg-white p-0.5">
@@ -325,14 +337,14 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
                   :class="selectedYear === y ? 'bg-white text-ink-900 shadow-sm ring-1 ring-ink-200' : 'text-ink-500'"
                   @click="selectedYear = y"
                 >
-                  {{ y }} 年
+                  {{ t('timeline.yearLabel', { year: y }) }}
                 </button>
               </div>
             </div>
             <NRadioGroup v-model:value="colorTheme" size="small">
-              <NRadio value="default">默认</NRadio>
-              <NRadio value="colorblind">色弱</NRadio>
-              <NRadio value="dark">深色</NRadio>
+              <NRadio value="default">{{ t('timeline.themeDefault') }}</NRadio>
+              <NRadio value="colorblind">{{ t('timeline.themeColorblind') }}</NRadio>
+              <NRadio value="dark">{{ t('timeline.themeDark') }}</NRadio>
             </NRadioGroup>
           </div>
 
@@ -347,7 +359,7 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
           </div>
 
           <div class="flex items-center justify-end gap-2 px-5 pb-4 text-xs text-ink-400">
-            <span>{{ rangeLabel }} · 少</span>
+            <span>{{ rangeLabel }} · {{ t('timeline.legendLess') }}</span>
             <span
               v-for="(_, i) in legend"
               :key="i"
@@ -360,17 +372,17 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
                     : ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'][i],
               }"
             />
-            <span>多</span>
+            <span>{{ t('timeline.legendMore') }}</span>
           </div>
         </section>
       </div>
     </NSpin>
 
     <NDrawer v-model:show="drawerShow" :width="520" placement="right">
-      <NDrawerContent :title="selectedDate ? `${selectedDate} 的提交` : '提交详情'" closable>
+      <NDrawerContent :title="drawerHeading" closable>
         <template v-if="selectedBucket">
           <div class="mb-3 flex flex-wrap items-center gap-2">
-            <NTag size="small" type="info" :bordered="false">{{ selectedBucket.commits.length }} 次提交</NTag>
+            <NTag size="small" type="info" :bordered="false">{{ t('timeline.commitsOnDay', { count: selectedBucket.commits.length }) }}</NTag>
             <NTag
               v-if="selectedBucket.additions > 0 || selectedBucket.deletions > 0"
               size="small"
@@ -381,19 +393,19 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
             </NTag>
           </div>
           <NText depth="3" class="mb-3 block text-xs">
-            GitHub 单条提交通常无 +/−（列表接口不返回 stats）；当日合计来自周统计分摊。Gitee 在开启明细后可见逐条行数。
+            {{ t('timeline.githubStatsNote') }}
           </NText>
 
           <div class="mb-3 space-y-2">
-            <NInput v-model:value="keyword" size="small" clearable placeholder="搜索 commit message">
+            <NInput v-model:value="keyword" size="small" clearable :placeholder="t('timeline.searchPlaceholder')">
               <template #prefix>
                 <NIcon><Search :size="14" /></NIcon>
               </template>
             </NInput>
             <NRadioGroup v-model:value="mergeFilter" size="small">
-              <NRadio value="all">全部</NRadio>
-              <NRadio value="non-merge">非 Merge</NRadio>
-              <NRadio value="merge">仅 Merge</NRadio>
+              <NRadio value="all">{{ t('common.all') }}</NRadio>
+              <NRadio value="non-merge">{{ t('timeline.hideMerge') }}</NRadio>
+              <NRadio value="merge">Merge</NRadio>
             </NRadioGroup>
           </div>
 
@@ -452,9 +464,9 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
               </div>
             </div>
           </div>
-          <NEmpty v-else description="这一天没有符合条件的提交" class="py-12" />
+          <NEmpty v-else :description="t('timeline.noCommits')" class="py-12" />
         </template>
-        <NEmpty v-else description="这一天没有提交记录" class="py-12" />
+        <NEmpty v-else :description="t('timeline.noCommits')" class="py-12" />
       </NDrawerContent>
     </NDrawer>
   </div>

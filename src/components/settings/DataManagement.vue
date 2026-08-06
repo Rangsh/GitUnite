@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { NButton, NText } from 'naive-ui'
 import {
@@ -14,6 +15,7 @@ import {
 import type { AnalyticsScope } from '@/utils/analytics'
 import ShareDialog from '@/components/share/ShareDialog.vue'
 
+const { t } = useI18n()
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const auth = useAuthStore()
@@ -45,9 +47,9 @@ function onExportReposCsv() {
 }
 
 const scopeTabs = computed(() => [
-  { label: '聚合', value: 'all' as const },
-  { label: 'GitHub', value: 'github' as const, disabled: !auth.isConnected('github') },
-  { label: 'Gitee', value: 'gitee' as const, disabled: !auth.isConnected('gitee') },
+  { label: t('common.aggregate'), value: 'all' as const },
+  { label: t('common.github'), value: 'github' as const, disabled: !auth.isConnected('github') },
+  { label: t('common.gitee'), value: 'gitee' as const, disabled: !auth.isConnected('gitee') },
 ])
 </script>
 
@@ -55,28 +57,28 @@ const scopeTabs = computed(() => [
   <section class="overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-panel">
     <div class="border-b border-ink-100 px-5 py-4">
       <h2 class="m-0 flex items-center gap-2 text-base font-semibold text-ink-900">
-        <Download :size="17" /> 数据导出与分享
+        <Download :size="17" /> {{ t('export.title') }}
       </h2>
-      <p class="mt-0.5 text-xs text-ink-400">导出当前筛选范围内的本地数据，或生成可分享的年度卡片 PNG</p>
+      <p class="mt-0.5 text-xs text-ink-400">{{ t('export.subtitle') }}</p>
     </div>
 
     <div class="space-y-5 px-5 py-4">
       <!-- 范围 -->
       <div class="flex flex-wrap items-center gap-3">
-        <NText depth="3" class="text-xs">导出范围</NText>
+        <NText depth="3" class="text-xs">{{ t('export.scope') }}</NText>
         <div class="inline-flex rounded-lg border border-ink-200 bg-ink-50 p-0.5">
           <button
-            v-for="t in scopeTabs"
-            :key="t.value"
+            v-for="tab in scopeTabs"
+            :key="tab.value"
             type="button"
             class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-            :class="scope === t.value
+            :class="scope === tab.value
               ? 'bg-white text-ink-900 shadow-sm'
-              : t.disabled ? 'cursor-not-allowed text-ink-300' : 'text-ink-500 hover:bg-ink-50'"
-            :disabled="t.disabled"
-            @click="scope = t.value"
+              : tab.disabled ? 'cursor-not-allowed text-ink-300' : 'text-ink-500 hover:bg-ink-50'"
+            :disabled="tab.disabled"
+            @click="scope = tab.value"
           >
-            {{ t.label }}
+            {{ tab.label }}
           </button>
         </div>
       </div>
@@ -92,8 +94,8 @@ const scopeTabs = computed(() => [
             <FileJson :size="17" />
           </span>
           <span>
-            <span class="block text-sm font-medium text-ink-900">JSON 完整导出</span>
-            <span class="block text-xs text-ink-400">仓库 / 提交 / PR / 统计</span>
+            <span class="block text-sm font-medium text-ink-900">{{ t('export.jsonTitle') }}</span>
+            <span class="block text-xs text-ink-400">{{ t('export.jsonDesc') }}</span>
           </span>
         </button>
 
@@ -106,8 +108,8 @@ const scopeTabs = computed(() => [
             <FileSpreadsheet :size="17" />
           </span>
           <span>
-            <span class="block text-sm font-medium text-ink-900">commits.csv</span>
-            <span class="block text-xs text-ink-400">含本地日期与增删行（BOM）</span>
+            <span class="block text-sm font-medium text-ink-900">{{ t('export.commitsTitle') }}</span>
+            <span class="block text-xs text-ink-400">{{ t('export.commitsDesc') }}</span>
           </span>
         </button>
 
@@ -120,8 +122,8 @@ const scopeTabs = computed(() => [
             <FileSpreadsheet :size="17" />
           </span>
           <span>
-            <span class="block text-sm font-medium text-ink-900">repos.csv</span>
-            <span class="block text-xs text-ink-400">语言 / Star / 我的提交数</span>
+            <span class="block text-sm font-medium text-ink-900">{{ t('export.reposTitle') }}</span>
+            <span class="block text-xs text-ink-400">{{ t('export.reposDesc') }}</span>
           </span>
         </button>
       </div>
@@ -129,9 +131,9 @@ const scopeTabs = computed(() => [
       <div class="border-t border-ink-100 pt-4">
         <NButton type="primary" class="!rounded-xl" @click="shareShow = true">
           <template #icon><Share2 :size="15" /></template>
-          生成分享卡片（PNG）
+          {{ t('export.shareBtn') }}
         </NButton>
-        <NText depth="3" class="ml-3 text-xs">1200×630，可选择隐藏头像与昵称</NText>
+        <NText depth="3" class="ml-3 text-xs">{{ t('export.shareHint') }}</NText>
       </div>
     </div>
 

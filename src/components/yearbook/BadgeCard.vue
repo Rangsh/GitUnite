@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Lock } from 'lucide-vue-next'
 import { BADGE_BY_ID, type BadgeStatus, type BadgeTone } from '@/utils/badges'
 
 const props = defineProps<{
   badge: BadgeStatus
 }>()
+
+const { t } = useI18n()
 
 const imgSrc = computed(() => `/badges/${props.badge.id}.webp`)
 const imgFailed = ref(false)
@@ -22,6 +25,8 @@ const TONE_COLORS: Record<BadgeTone, string> = {
 const tone = computed(() => TONE_COLORS[props.badge.tone] ?? TONE_COLORS.default)
 const progressPct = computed(() => Math.round(props.badge.progress * 100))
 const fallbackIcon = computed(() => BADGE_BY_ID.get(props.badge.id)?.icon ?? props.badge.icon)
+const badgeName = computed(() => t(`badges.${props.badge.id}.name`))
+const badgeDesc = computed(() => t(`badges.${props.badge.id}.description`))
 </script>
 
 <template>
@@ -35,7 +40,7 @@ const fallbackIcon = computed(() => BADGE_BY_ID.get(props.badge.id)?.icon ?? pro
       <img
         v-if="!imgFailed"
         :src="imgSrc"
-        :alt="badge.name"
+        :alt="badgeName"
         width="80"
         height="80"
         class="h-20 w-20 object-contain"
@@ -62,10 +67,10 @@ const fallbackIcon = computed(() => BADGE_BY_ID.get(props.badge.id)?.icon ?? pro
       class="mt-2 text-sm font-semibold"
       :class="badge.earned ? 'text-ink-900' : 'text-ink-500'"
     >
-      {{ badge.name }}
+      {{ badgeName }}
     </div>
     <div class="mt-0.5 text-[11px] leading-relaxed text-ink-400">
-      {{ badge.description }}
+      {{ badgeDesc }}
     </div>
 
     <div v-if="!badge.earned" class="mt-3 w-full">
@@ -82,7 +87,7 @@ const fallbackIcon = computed(() => BADGE_BY_ID.get(props.badge.id)?.icon ?? pro
       class="mt-3 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
       :style="{ color: tone, background: `${tone}1a` }"
     >
-      已达成{{ badge.achievedAt ? ` · ${badge.achievedAt}` : '' }}
+      {{ t('yearbook.earnedAt') }}{{ badge.achievedAt ? ` · ${badge.achievedAt}` : '' }}
     </div>
   </div>
 </template>

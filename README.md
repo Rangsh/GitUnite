@@ -1,44 +1,78 @@
 # GitUnite
 
-> 多平台代码仓库聚合分析工具 · 纯前端 · 本地运行 · 隐私优先
+[![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](./LICENSE)
+[![Vue 3](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white)](https://vuejs.org/)
+[![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-GitUnite 在你的浏览器本地聚合 **GitHub** 与 **Gitee** 的仓库与提交数据，从代码量、活跃度、语言分布、协作网络、PR/Issue、年度报告等多个维度生成可视化的"编码档案"。
+> Local-first coding archive for **GitHub** & **Gitee** — no backend, no data upload.
 
-- 🔒 **纯前端、无后端**：所有数据只存在浏览器 IndexedDB，Token 不出本机
-- 🐙 **双平台聚合**：GitHub + Gitee 统一视图，支持单平台/聚合切换
-- 📊 **多维度看板**：基础统计、热力图、语言趋势、协作网络图、年度年鉴
-- 🏅 **成就徽章**：本地计算的趣味徽章（夜猫子、连续提交王、万行代码……）
-- 💾 **数据导出**：JSON / CSV 原始数据，可生成分享 PNG 卡片
+GitUnite runs entirely in your browser. Paste a Personal Access Token, sync repos and commits into IndexedDB, then explore dashboards, heatmaps, PR/Issue stats, yearbook stories, and shareable PNG cards.
 
-## 快速开始
+**中文说明见下方；English first for GitHub discoverability.**
+
+## Features
+
+- **Privacy first** — Tokens and analytics stay in the browser (`localStorage` + IndexedDB)
+- **Dual platforms** — GitHub + Gitee with per-platform or combined views
+- **Dashboards** — Commits, lines of code, activity hours, language mix, contribution heatmap
+- **Timeline** — Day-level commit browsing with search and merge filters
+- **PR / Issue** — Created / merged / closed stats and top contribution repos
+- **Yearbook & badges** — Annual story, word cloud, local achievement badges
+- **Export & share** — JSON / CSV (UTF-8 BOM) and 1200×630 PNG share cards
+- **i18n & theme** — 简体中文 / English; light / dark / system theme
+
+## Quick start
+
+```bash
+# Requires Node.js 18+ and pnpm
+pnpm install
+pnpm dev
+```
+
+Open [http://localhost:5173](http://localhost:5173), go to **Settings**, and paste your tokens.
+
+### Build
+
+```bash
+pnpm build
+pnpm preview
+```
+
+### Token scopes (read-only)
+
+| Platform | Minimum | For PR / Issue |
+| --- | --- | --- |
+| **GitHub** Fine-grained | Contents, Metadata | Pull requests, Issues |
+| **Gitee** personal token | `projects`, `user_info` | `pull_requests`, `issues` |
+
+> Never paste tokens on untrusted devices or browsers with untrusted extensions.
+
+## Tech stack
+
+Vue 3 · TypeScript · Vite · Pinia · Vue Router · vue-i18n · Naive UI · Tailwind CSS · ECharts · Dexie · axios · dayjs · Papa Parse · html-to-image
+
+Product scope: [产品需求文档.md](./产品需求文档.md)
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Issues and PRs are welcome.
+
+## License
+
+[MIT](./LICENSE) © 2026 Rangsh
+
+---
+
+## 中文简介
+
+GitUnite 是一个**纯前端、本地运行**的 GitHub / Gitee 个人编码数据看板。Token 与业务数据不会上传到任何服务器。
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-浏览器打开 http://localhost:5173 ，在「设置」页粘贴 GitHub / Gitee 的 Personal Access Token 即可。
+在「设置」中粘贴 PAT 后同步即可。界面支持中英文与浅色 / 深色 / 跟随系统。
 
-### Token 权限
-
-- **GitHub Fine-grained token**：Contents: Read-only、Metadata: Read-only；需要 PR/Issue 统计时再加 Pull Requests: Read、Issues: Read
-- **Gitee 私人令牌**：projects、user_info、pull_requests、issues（均只读）
-
-## 技术栈
-
-Vue 3 + TypeScript + Vite + Pinia + Vue Router + Naive UI + Tailwind CSS + ECharts + Dexie.js + axios
-
-详见 [产品需求文档.md](./产品需求文档.md)。
-
-## 开发进度
-
-- [x] M1 基础骨架
-- [ ] M2 仓库与提交同步
-- [ ] M3 核心看板
-- [ ] M4 协作网络 & 年度报告
-- [ ] M5 PR/Issue & 导出分享
-- [ ] M6 打磨开源
-
-## License
-
-MIT
+详细需求见 [产品需求文档.md](./产品需求文档.md)，参与开发请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -14,6 +15,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSync } from '@/composables/useSync'
 import type { UnifiedRepo } from '@/api/types'
 
+const { t } = useI18n()
 const store = useReposStore()
 const auth = useAuthStore()
 const router = useRouter()
@@ -25,42 +27,43 @@ watch(running, async (val, old) => {
   if (old && !val) await store.load()
 })
 
-const tabs = [
-  { label: '全部', value: 'all' },
-  { label: 'GitHub', value: 'github' },
-  { label: 'Gitee', value: 'gitee' },
-] as const
+const tabs = computed(() => [
+  { label: t('common.aggregate'), value: 'all' as const },
+  { label: t('common.github'), value: 'github' as const },
+  { label: t('common.gitee'), value: 'gitee' as const },
+])
 
 const languageOptions = computed(() => [
-  { label: '全部语言', value: '' },
+  { label: t('repos.langAll'), value: '' },
   ...languages.value.map(l => ({ label: l, value: l })),
 ])
 
-const sortOptions = [
-  { label: '最近活跃', value: 'updated' },
-  { label: 'Star 数', value: 'stars' },
-  { label: '名称', value: 'name' },
-  { label: '提交数', value: 'commits' },
-]
+const sortOptions = computed(() => [
+  { label: t('repos.sortUpdated'), value: 'updated' },
+  { label: t('repos.sortStars'), value: 'stars' },
+  { label: t('repos.sortName'), value: 'name' },
+  { label: t('repos.sortCommits'), value: 'commits' },
+])
 
-const roleLabel: Record<UnifiedRepo['role'], { text: string, type: 'success' | 'info' | 'warning' | 'default' }> = {
-  owned: { text: '自有', type: 'success' },
-  organization: { text: '组织', type: 'info' },
-  fork: { text: 'Fork', type: 'warning' },
-  pr_contributed: { text: 'PR 贡献', type: 'default' },
-}
+const roleLabel = computed(() => ({
+  owned: { text: t('repos.roleOwned'), type: 'success' as const },
+  organization: { text: t('repos.roleOrg'), type: 'info' as const },
+  fork: { text: t('common.fork'), type: 'warning' as const },
+  pr_contributed: { text: t('repos.rolePr'), type: 'default' as const },
+}))
 
 const emptyDescription = computed(() => {
-  if (!auth.anyConnected) return '尚未连接账号。请先到设置中粘贴 GitHub / Gitee Token。'
-  return '尚未同步任何仓库。点击右上角同步开始拉取。'
+  if (!auth.anyConnected) return t('repos.emptyConnect')
+  return t('repos.empty')
 })
 
 const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
   {
-    title: '仓库',
+    title: t('repos.colRepo'),
     key: 'fullName',
     render: (row) => {
       const PlatformIcon = row.platform === 'github' ? Github : Gitee
+      const role = roleLabel.value[row.role]
       return h('div', { class: 'flex items-center gap-2 flex-wrap' }, [
         h(PlatformIcon as any, { size: 16 }),
         h('a', {
@@ -68,31 +71,31 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
           target: '_blank',
           class: 'font-medium text-ink-900 hover:underline',
         }, row.fullName),
-        h(NTag, { size: 'small', type: roleLabel[row.role].type, bordered: false, class: '!rounded-lg' }, () => roleLabel[row.role].text),
-        row.isPrivate ? h(NTag, { size: 'small', bordered: false, class: '!rounded-lg' }, () => '私有') : null,
+        h(NTag, { size: 'small', type: role.type, bordered: false, class: '!rounded-lg' }, () => role.text),
+        row.isPrivate ? h(NTag, { size: 'small', bordered: false, class: '!rounded-lg' }, () => t('repos.private')) : null,
       ])
     },
   },
   {
-    title: '描述',
+    title: t('repos.colDesc'),
     key: 'description',
     ellipsis: { tooltip: true },
     render: row => row.description || h('span', { class: 'text-ink-300' }, '—'),
   },
   {
-    title: '语言',
+    title: t('repos.colLang'),
     key: 'language',
     width: 120,
     render: row => row.language || '—',
   },
   {
-    title: '提交',
+    title: t('repos.commits'),
     key: 'commits',
     width: 80,
     render: row => h('span', { class: 'gu-metric' }, String(commitCounts.value[row.id] ?? 0)),
   },
   {
-    title: 'Star',
+    title: t('repos.stars'),
     key: 'stars',
     width: 90,
     render: row => h('div', { class: 'flex items-center gap-1' }, [
@@ -101,7 +104,7 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
     ]),
   },
   {
-    title: 'Fork',
+    title: t('repos.forks'),
     key: 'forks',
     width: 90,
     render: row => h('div', { class: 'flex items-center gap-1' }, [
@@ -110,7 +113,7 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
     ]),
   },
   {
-    title: '最后活跃',
+    title: t('repos.updated'),
     key: 'updatedAt',
     width: 120,
     render: row => new Date(row.updatedAt).toLocaleDateString(),
@@ -131,8 +134,8 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
         <p class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700">
           <FolderGit2 :size="13" /> Repositories
         </p>
-        <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900">仓库列表</h1>
-        <p class="mt-1.5 text-sm text-ink-500">聚合 GitHub / Gitee 名下与参与贡献的仓库</p>
+        <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900">{{ t('repos.title') }}</h1>
+        <p class="mt-1.5 text-sm text-ink-500">{{ t('repos.subtitle') }}</p>
       </div>
       <SyncButton :platform="filter === 'all' ? undefined : filter" />
     </header>
@@ -141,19 +144,19 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
       <div class="flex flex-wrap items-center gap-3">
         <div class="inline-flex rounded-lg border border-ink-200 bg-ink-50 p-0.5">
           <button
-            v-for="t in tabs"
-            :key="t.value"
+            v-for="tab in tabs"
+            :key="tab.value"
             type="button"
             class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-            :class="filter === t.value ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:bg-ink-50'"
-            @click="filter = t.value"
+            :class="filter === tab.value ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:bg-ink-50'"
+            @click="filter = tab.value"
           >
-            {{ t.label }}
+            {{ tab.label }}
           </button>
         </div>
         <NInput
           v-model:value="keyword"
-          placeholder="搜索仓库名或描述"
+          :placeholder="t('repos.searchPlaceholder')"
           clearable
           class="!max-w-[240px]"
         >
@@ -162,13 +165,13 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
         <NSelect
           v-model:value="language"
           :options="languageOptions"
-          placeholder="语言"
+          :placeholder="t('dashboard.languages')"
           clearable
           class="!w-[160px]"
         />
         <NSelect v-model:value="sort" :options="sortOptions" size="small" class="!w-[140px]" />
         <div class="flex items-center gap-2">
-          <NText class="!text-ink-500 text-xs">仅我贡献过的</NText>
+          <NText class="!text-ink-500 text-xs">{{ t('repos.onlyContributed') }}</NText>
           <NSwitch v-model:value="contributedOnly" size="small" />
         </div>
       </div>
@@ -194,7 +197,7 @@ const columns = computed<DataTableColumns<UnifiedRepo>>(() => [
               class="mt-2 rounded-xl bg-ink-900 px-4 py-2 text-sm text-white"
               @click="router.push('/settings')"
             >
-              去设置连接账号
+              {{ t('common.goToSettings') }}
             </button>
           </template>
         </NEmpty>

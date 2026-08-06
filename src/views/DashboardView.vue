@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import {
   NButton, NEmpty, NSpin, NTooltip, NTag,
@@ -20,6 +21,7 @@ import { formatBytes, formatNumber, localDateKey } from '@/utils/date'
 import { LanguageDonut, HourlyBar, WeekdayBar, LanguageTrend } from '@/components/charts'
 import StatCard from '@/components/common/StatCard.vue'
 
+const { t, locale } = useI18n()
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const auth = useAuthStore()
@@ -179,15 +181,15 @@ const dataProvenance = computed(() => {
 })
 
 const scopeTabs = computed(() => [
-  { label: '聚合', value: 'all' as const },
-  { label: 'GitHub', value: 'github' as const, disabled: !auth.isConnected('github') },
-  { label: 'Gitee', value: 'gitee' as const, disabled: !auth.isConnected('gitee') },
+  { label: t('common.aggregate'), value: 'all' as const },
+  { label: t('common.github'), value: 'github' as const, disabled: !auth.isConnected('github') },
+  { label: t('common.gitee'), value: 'gitee' as const, disabled: !auth.isConnected('gitee') },
 ])
 
 const syncLabel = computed(() => {
-  if (scope.value === 'github') return '同步 GitHub'
-  if (scope.value === 'gitee') return '同步 Gitee'
-  return '同步全部'
+  if (scope.value === 'github') return t('common.syncPlatform', { name: t('common.github') })
+  if (scope.value === 'gitee') return t('common.syncPlatform', { name: t('common.gitee') })
+  return t('common.syncOne')
 })
 
 function syncByScope() {
@@ -226,29 +228,29 @@ function formatDate(iso: string | null): string {
           Coding Archive
         </p>
         <h1 class="m-0 text-2xl font-semibold tracking-tight text-ink-900 sm:text-3xl">
-          数据看板
+          {{ t('dashboard.title') }}
         </h1>
         <p class="mt-1.5 max-w-xl text-sm text-ink-500">
-          提交节奏、代码量与技术栈的本地聚合视图
+          {{ t('dashboard.subtitle') }}
         </p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
         <div class="inline-flex rounded-xl border border-ink-200 bg-white p-1 shadow-panel">
           <button
-            v-for="t in scopeTabs"
-            :key="t.value"
+            v-for="tab in scopeTabs"
+            :key="tab.value"
             type="button"
             class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-            :class="scope === t.value
+            :class="scope === tab.value
               ? 'bg-ink-900 text-white shadow-sm'
-              : t.disabled
+              : tab.disabled
                 ? 'cursor-not-allowed text-ink-300'
                 : 'text-ink-500 hover:bg-ink-50 hover:text-ink-800'"
-            :disabled="t.disabled"
-            @click="scope = t.value"
+            :disabled="tab.disabled"
+            @click="scope = tab.value"
           >
-            {{ t.label }}
+            {{ tab.label }}
           </button>
         </div>
         <NButton
@@ -271,7 +273,7 @@ function formatDate(iso: string | null): string {
         v-if="!hasData && !analytics.loading && !computing"
         class="rounded-2xl border border-dashed border-ink-200 bg-white/70 px-6 py-20 text-center animate-fade-up"
       >
-        <NEmpty description="还没有数据。连接账号后，按当前视角点击同步即可。">
+        <NEmpty :description="`${t('dashboard.emptyTitle')}. ${t('dashboard.emptyDesc')}`">
           <template #extra>
             <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
               {{ syncLabel }}
@@ -287,28 +289,36 @@ function formatDate(iso: string | null): string {
           style="animation-delay: 20ms"
         >
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="m-0 text-sm font-semibold text-ink-900">数据来源</h2>
+            <h2 class="m-0 text-sm font-semibold text-ink-900">{{ t('dashboard.dataSource') }}</h2>
             <div class="gu-metric text-[11px] text-ink-400">
-              {{ dataProvenance.loadedAt ? `载入于 ${new Date(dataProvenance.loadedAt).toLocaleString('zh-CN')}` : '尚未载入' }}
+              {{ dataProvenance.loadedAt
+                ? t('dashboard.loadedAt', { time: new Date(dataProvenance.loadedAt).toLocaleString(locale) })
+                : t('dashboard.notLoaded') }}
             </div>
           </div>
           <div class="mt-3 grid gap-2 sm:grid-cols-3">
             <div class="rounded-xl bg-ink-50 px-3 py-2">
-              <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">GitHub</div>
+              <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">{{ t('common.github') }}</div>
               <div class="gu-metric mt-1 text-sm text-ink-800">
-                {{ dataProvenance.github.repos }} 仓 · {{ formatNumber(dataProvenance.github.commits) }} 提交
+                {{ t('dashboard.repoCommitSummary', {
+                  repos: dataProvenance.github.repos,
+                  commits: formatNumber(dataProvenance.github.commits),
+                }) }}
               </div>
             </div>
             <div class="rounded-xl bg-ink-50 px-3 py-2">
-              <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Gitee</div>
+              <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">{{ t('common.gitee') }}</div>
               <div class="gu-metric mt-1 text-sm text-ink-800">
-                {{ dataProvenance.gitee.repos }} 仓 · {{ formatNumber(dataProvenance.gitee.commits) }} 提交
+                {{ t('dashboard.repoCommitSummary', {
+                  repos: dataProvenance.gitee.repos,
+                  commits: formatNumber(dataProvenance.gitee.commits),
+                }) }}
               </div>
             </div>
             <div class="rounded-xl bg-ink-50 px-3 py-2">
-              <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">GitHub 周统计</div>
+              <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">{{ t('dashboard.githubWeeklyStats') }}</div>
               <div class="gu-metric mt-1 text-sm text-ink-800">
-                {{ dataProvenance.stats }} 个仓库有增删行
+                {{ t('dashboard.reposWithLines', { count: dataProvenance.stats }) }}
               </div>
             </div>
           </div>
@@ -320,28 +330,28 @@ function formatDate(iso: string | null): string {
           style="animation-delay: 40ms"
         >
           <StatCard
-            label="总提交"
+            :label="t('dashboard.commits')"
             :value="formatNumber(basic.commitCount)"
             :icon="GitCommitHorizontal"
             tone="accent"
           />
           <StatCard
-            label="仓库（不含 Fork）"
+            :label="t('dashboard.repos')"
             :value="formatNumber(basic.repoCount)"
-            :hint="`另有 ${basic.forkCount} 个 Fork`"
+            :hint="t('dashboard.forkHint', { count: basic.forkCount })"
             :icon="FolderGit2"
           />
           <StatCard
-            label="最长连续"
-            :value="`${activity.longestStreak} 天`"
+            :label="t('dashboard.longestStreak')"
+            :value="`${activity.longestStreak} ${t('common.unitDays')}`"
             :hint="activity.longestStreakStart ? `${formatDate(activity.longestStreakStart)} → ${formatDate(activity.longestStreakEnd)}` : undefined"
             :icon="Flame"
             tone="success"
           />
           <StatCard
-            label="活跃天数"
+            :label="t('dashboard.activeDays')"
             :value="formatNumber(activity.activeDays)"
-            :hint="`日均 ${activity.avgCommitsPerDay.toFixed(1)} 次提交`"
+            :hint="t('dashboard.dailyAvgHint', { avg: activity.avgCommitsPerDay.toFixed(1) })"
             :icon="CalendarRange"
           />
         </section>
@@ -353,30 +363,30 @@ function formatDate(iso: string | null): string {
         >
           <StatCard
             variant="compact"
-            label="新增行"
+            :label="t('dashboard.additions')"
             :value="formatNumber(basic.additions)"
             :icon="Plus"
             tone="success"
           />
           <StatCard
             variant="compact"
-            label="删除行"
+            :label="t('dashboard.deletions')"
             :value="formatNumber(basic.deletions)"
             :icon="Minus"
             tone="danger"
           />
           <StatCard
             variant="compact"
-            label="均次变更"
-            :value="Math.round(basic.avgChanges).toLocaleString()"
-            hint="行 / 提交"
+            :label="t('dashboard.avgChanges')"
+            :value="Math.round(basic.avgChanges).toLocaleString(locale)"
+            :hint="t('dashboard.linesPerCommit')"
             :icon="Activity"
           />
           <StatCard
             variant="compact"
-            label="当前连续"
-            :value="`${activity.currentStreak} 天`"
-            :hint="activity.currentStreak > 0 ? '保持节奏' : '最近两天未提交'"
+            :label="t('dashboard.currentStreak')"
+            :value="`${activity.currentStreak} ${t('common.unitDays')}`"
+            :hint="activity.currentStreak > 0 ? t('dashboard.streakKeep') : t('dashboard.streakBroken')"
             :icon="Zap"
             tone="accent"
           />
@@ -386,7 +396,7 @@ function formatDate(iso: string | null): string {
           v-if="!basic.hasCodeDetail"
           class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
         >
-          当前范围代码行明细不完整。可在「设置 → 同步选项」开启「代码行明细同步」。
+          {{ t('dashboard.codeDetailIncomplete') }}
         </div>
 
         <!-- Activity -->
@@ -396,30 +406,30 @@ function formatDate(iso: string | null): string {
         >
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
             <div>
-              <h2 class="m-0 text-base font-semibold text-ink-900">活跃度</h2>
-              <p class="mt-0.5 text-xs text-ink-400">按时区归桶的提交分布</p>
+              <h2 class="m-0 text-base font-semibold text-ink-900">{{ t('dashboard.activity') }}</h2>
+              <p class="mt-0.5 text-xs text-ink-400">{{ t('dashboard.activityHint') }}</p>
             </div>
             <div class="flex flex-wrap gap-4 text-sm">
               <div>
-                <div class="text-[10px] uppercase tracking-wider text-ink-400">首次</div>
+                <div class="text-[10px] uppercase tracking-wider text-ink-400">{{ t('dashboard.firstCommit') }}</div>
                 <div class="gu-metric font-medium text-ink-800">{{ formatDate(activity.firstCommitAt) }}</div>
               </div>
               <div>
-                <div class="text-[10px] uppercase tracking-wider text-ink-400">最近</div>
+                <div class="text-[10px] uppercase tracking-wider text-ink-400">{{ t('dashboard.lastCommit') }}</div>
                 <div class="gu-metric font-medium text-ink-800">{{ formatDate(activity.lastCommitAt) }}</div>
               </div>
               <div>
-                <div class="text-[10px] uppercase tracking-wider text-ink-400">黄金时段</div>
+                <div class="text-[10px] uppercase tracking-wider text-ink-400">{{ t('dashboard.goldenHours') }}</div>
                 <div class="gu-metric font-medium text-brand-700">{{ goldenHourText }}</div>
               </div>
               <div>
                 <div class="text-[10px] uppercase tracking-wider text-ink-400">
-                  深夜
+                  {{ t('dashboard.nightRatio') }}
                   <NTooltip>
                     <template #trigger>
                       <Moon :size="11" class="ml-0.5 inline text-ink-400" />
                     </template>
-                    本地时间 0:00–6:00
+                    {{ t('dashboard.nightHoursTooltip') }}
                   </NTooltip>
                 </div>
                 <div class="gu-metric font-medium text-ink-800">
@@ -433,16 +443,16 @@ function formatDate(iso: string | null): string {
             <div>
               <div class="mb-3 flex items-center gap-2 text-xs font-medium text-ink-500">
                 <span class="inline-block h-2 w-2 rounded-full bg-brand-600" />
-                时段分布
-                <span class="font-normal text-ink-400">· 高亮为黄金 3 小时</span>
+                {{ t('dashboard.hourlyDist') }}
+                <span class="font-normal text-ink-400">{{ t('dashboard.goldenHighlight') }}</span>
               </div>
               <HourlyBar :data="activity.hourly" :golden-start="activity.goldenHours.start" />
             </div>
             <div>
               <div class="mb-3 flex items-center gap-2 text-xs font-medium text-ink-500">
                 <span class="inline-block h-2 w-2 rounded-full bg-ink-700" />
-                星期分布
-                <span class="font-normal text-ink-400">· 周末暖色</span>
+                {{ t('dashboard.weekdayDist') }}
+                <span class="font-normal text-ink-400">{{ t('dashboard.weekendWarm') }}</span>
               </div>
               <WeekdayBar :data="activity.weekday" />
             </div>
@@ -456,8 +466,8 @@ function formatDate(iso: string | null): string {
         >
           <div class="overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-panel lg:col-span-2">
             <div class="border-b border-ink-100 px-5 py-4">
-              <h2 class="m-0 text-base font-semibold text-ink-900">语言占比</h2>
-              <p class="mt-0.5 text-xs text-ink-400">按仓库 languages 字节加权</p>
+              <h2 class="m-0 text-base font-semibold text-ink-900">{{ t('dashboard.languages') }}</h2>
+              <p class="mt-0.5 text-xs text-ink-400">{{ t('dashboard.languagesWeighted') }}</p>
             </div>
             <div class="p-3">
               <LanguageDonut :data="languages" height="280px" />
@@ -466,8 +476,8 @@ function formatDate(iso: string | null): string {
 
           <div class="overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-panel lg:col-span-3">
             <div class="border-b border-ink-100 px-5 py-4">
-              <h2 class="m-0 text-base font-semibold text-ink-900">语言明细</h2>
-              <p class="mt-0.5 text-xs text-ink-400">Top 语言 · 仓库数 · 体积</p>
+              <h2 class="m-0 text-base font-semibold text-ink-900">{{ t('dashboard.topLanguages') }}</h2>
+              <p class="mt-0.5 text-xs text-ink-400">{{ t('dashboard.topLanguagesHint') }}</p>
             </div>
             <div class="max-h-[320px] space-y-1 overflow-auto p-3">
               <div
@@ -485,7 +495,7 @@ function formatDate(iso: string | null): string {
                 <span class="min-w-0 flex-1 truncate text-sm font-medium text-ink-800">
                   {{ lang.language }}
                 </span>
-                <span class="hidden text-xs text-ink-400 sm:inline">{{ lang.repoCount }} 仓</span>
+                <span class="hidden text-xs text-ink-400 sm:inline">{{ t('dashboard.repoCountShort', { count: lang.repoCount }) }}</span>
                 <span class="gu-metric w-16 text-right text-xs text-ink-500">
                   {{ formatBytes(lang.bytes) }}
                 </span>
@@ -503,7 +513,7 @@ function formatDate(iso: string | null): string {
                 </span>
               </div>
               <div v-if="!languages.length" class="py-16 text-center text-sm text-ink-400">
-                暂无语言数据
+                {{ t('dashboard.noLanguageData') }}
               </div>
             </div>
           </div>
@@ -516,8 +526,8 @@ function formatDate(iso: string | null): string {
         >
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
             <div>
-              <h2 class="m-0 text-base font-semibold text-ink-900">技术栈趋势</h2>
-              <p class="mt-0.5 text-xs text-ink-400">按仓库主语言的提交量堆叠</p>
+              <h2 class="m-0 text-base font-semibold text-ink-900">{{ t('dashboard.trend') }}</h2>
+              <p class="mt-0.5 text-xs text-ink-400">{{ t('dashboard.trendHint') }}</p>
             </div>
             <div class="inline-flex rounded-lg border border-ink-200 bg-ink-50 p-0.5">
               <button
@@ -526,7 +536,7 @@ function formatDate(iso: string | null): string {
                 :class="trendGranularity === 'year' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'"
                 @click="trendGranularity = 'year'"
               >
-                按年
+                {{ t('dashboard.byYear') }}
               </button>
               <button
                 type="button"
@@ -534,14 +544,14 @@ function formatDate(iso: string | null): string {
                 :class="trendGranularity === 'quarter' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'"
                 @click="trendGranularity = 'quarter'"
               >
-                按季度
+                {{ t('dashboard.byQuarter') }}
               </button>
             </div>
           </div>
           <div class="p-5">
             <LanguageTrend :data="trend" />
             <div v-if="trend.newLanguages.size" class="mt-4 flex flex-wrap items-center gap-2">
-              <span class="text-xs text-ink-400">本期新出现</span>
+              <span class="text-xs text-ink-400">{{ t('dashboard.newThisPeriod') }}</span>
               <NTag
                 v-for="lang in trend.newLanguages"
                 :key="lang"
