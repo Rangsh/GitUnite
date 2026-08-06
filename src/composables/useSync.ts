@@ -29,7 +29,13 @@ export function useSync() {
   const activeProgress = computed(() => syncStore.activeProgress)
 
   async function start(platform?: Platform, options: StartOptions = {}) {
-    if (running.value) return
+    // 本页已在同步：自动增量与手动点击共用同一把状态
+    if (running.value) {
+      if (!options.silent) {
+        message.info('正在同步中（含打开应用后的后台增量），请稍候完成后再试')
+      }
+      return
+    }
 
     // 非静默模式下，Gitee 首次同步且代码明细开启时弹窗告知耗时风险
     if (
@@ -56,10 +62,16 @@ export function useSync() {
   }
 
   async function doStart(platform?: Platform, options: StartOptions = {}) {
+    // 禁止因本页 running=false 就 steal：其它标签页同步中时会误抢锁导致双开打穿配额。
+    // 仅当 localStorage 心跳锁已过期时，tryAcquireSyncLock(false) 内部会自然放行。
     const lock = await tryAcquireSyncLock()
     if (!lock) {
       if (!options.silent) {
-        message.warning('另一个标签页正在同步，请稍后再试（防止双开打穿平台限流）')
+        message.warning(
+          running.value
+            ? '正在同步中，请稍候'
+            : '同步锁被占用（可能有其他标签页在同步，或后台增量未结束）。请稍候、关闭多余标签页，或刷新本页后再试',
+        )
       }
       return
     }

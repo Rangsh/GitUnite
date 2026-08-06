@@ -75,11 +75,14 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
 
   // 1. 拉取仓库列表（不拉 languages，后面按需增量）
   let repos: UnifiedRepo[]
+  let listTruncated = false
   try {
-    repos = await adapter.listRepos(token, { ...req, includeLanguages: false })
+    const listed = await adapter.listRepos(token, { ...req, includeLanguages: false })
+    repos = listed.repos
+    listTruncated = listed.truncated
   }
   catch (err) {
-    if (options.signal?.aborted) {
+    if (options.signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
       sync.setProgress({ ...progress, phase: 'done', message: '已停止' })
       return
     }
@@ -93,13 +96,17 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
     repos = repos.filter(r => set.has(r.id))
   }
 
-  // 全量列表时清理远端已消失的仓库，避免污染统计
-  if (!filteredByIds) {
+  // 仅在完整拉完仓库列表时清理远端已消失的仓库；截断/中止时切勿误删
+  if (!filteredByIds && !listTruncated && !options.signal?.aborted) {
     const removed = await removeStaleRepos(platform, new Set(repos.map(r => r.id)))
     if (removed > 0) {
       progress.message = `[${platform}] 已清理 ${removed} 个远端不存在的仓库`
       sync.setProgress({ ...progress })
     }
+  }
+  else if (listTruncated) {
+    progress.message = `[${platform}] 仓库列表未拉全，跳过清理以免误删本地数据`
+    sync.setProgress({ ...progress })
   }
 
   // 语言字节：仅对「新仓 / updatedAt 变化 / 本地无语言数据」补请求
@@ -303,9 +310,9 @@ async function syncRepo(
   // 拉取提交列表（向前增量）
   // since 用水位线（上次成功入库的最新提交时间），不要用墙钟，
   // 否则首次同步中断后会丢历史，或漏掉同步过程中产生的提交。
-  let { commits, truncated } = await adapter.listCommits(token, repo, userLogin, since, req)
+  let { commits, truncated: forwardTruncated } = await adapter.listCommits(token, repo, userLogin, since, req)
   throwIfAborted(signal)
-  if (truncated) historyTruncated = true
+  if (forwardTruncated) historyTruncated = true
 
   // 过滤掉库里已存在的提交（全量重拉时仍 upsert，只是少一次无意义写入）
   if (commits.length && !fullHistory) {
@@ -315,7 +322,7 @@ async function syncRepo(
   }
 
   // 若历史曾被截断：用 until=本地最早提交 向更早方向补拉若干轮
-  if ((historyTruncated || truncated) && !fullHistory) {
+  if ((historyTruncated || forwardTruncated) && !fullHistory) {
     for (let round = 0; round < MAX_HISTORY_BACKFILL_ROUNDS; round++) {
       throwIfAborted(signal)
       const local = await db.commits.where('repoId').equals(repo.id).toArray()
@@ -326,9 +333,28 @@ async function syncRepo(
       // until 不含该时刻，减 1ms 避免重复拉到边界提交
       const until = new Date(new Date(oldest.authoredAt).getTime() - 1).toISOString()
       const older = await adapter.listCommits(token, repo, userLogin, undefined, { ...req, until })
+      // Gitee 本地按作者过滤后可能空页，但不能据此认定历史已完整
       if (!older.commits.length) {
-        historyTruncated = false
-        break
+        if (!older.truncated) {
+          historyTruncated = false
+          break
+        }
+        // 仍有更早页：把 until 再往前推一点继续（用当前 oldest - 1 天）
+        const olderUntil = new Date(new Date(oldest.authoredAt).getTime() - 86400_000).toISOString()
+        const retry = await adapter.listCommits(token, repo, userLogin, undefined, {
+          ...req,
+          until: olderUntil,
+        })
+        if (!retry.commits.length) {
+          historyTruncated = retry.truncated
+          break
+        }
+        const knownIds = new Set(allKnown.map(c => c.id))
+        const fresh = retry.commits.filter(c => !knownIds.has(c.id))
+        commits = [...commits, ...fresh]
+        historyTruncated = retry.truncated
+        if (!retry.truncated) break
+        continue
       }
       const knownIds = new Set(allKnown.map(c => c.id))
       const fresh = older.commits.filter(c => !knownIds.has(c.id))
@@ -378,20 +404,30 @@ async function syncRepo(
     return { detailsFetched, historyTruncated }
   }
 
-  // 水位线取本次+历史中最新提交时间（仅用于向前增量，不代表历史完整）
+  // 水位线：完整拉取时取最新；向前截断时取本批最早，避免跳过中间空洞
   const newest = commits.reduce<UnifiedCommit | null>((acc, c) => {
     if (!acc) return c
     return new Date(c.authoredAt) > new Date(acc.authoredAt) ? c : acc
   }, null)
+  const oldestInBatch = commits.reduce<UnifiedCommit | null>((acc, c) => {
+    if (!acc) return c
+    return new Date(c.authoredAt) < new Date(acc.authoredAt) ? c : acc
+  }, null)
 
   const previousWatermark = fullHistory ? null : cursor?.lastSyncedAt
-  const watermark = [newest?.authoredAt, previousWatermark]
-    .filter((v): v is string => !!v)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
-    ?? null
+  let watermark: string | null
+  if (forwardTruncated && oldestInBatch) {
+    watermark = oldestInBatch.authoredAt
+  }
+  else {
+    watermark = [newest?.authoredAt, previousWatermark]
+      .filter((v): v is string => !!v)
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+      ?? null
+  }
 
   // 全量重拉且本轮未截断 → 清除截断标记
-  if (fullHistory && !truncated) historyTruncated = false
+  if (fullHistory && !forwardTruncated && !historyTruncated) historyTruncated = false
 
   await cursorRepo.put({
     platform,

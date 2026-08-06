@@ -86,7 +86,7 @@ async function recompute() {
   if (token !== computeToken) return
 
   try {
-    // 徽章为全生涯、跨平台累计，不受年鉴 scope/年份影响
+    // 徽章含 Vue 组件引用，不能走 Worker structured clone；主线程计算即可
     const badgeInput = {
       ...baseInput,
       me: {
@@ -94,12 +94,7 @@ async function recompute() {
         gitee: auth.user('gitee')?.login ?? null,
       },
     }
-    try {
-      badges.value = await runInAnalyticsWorker<BadgeStatus[]>({ type: 'badges', payload: badgeInput })
-    }
-    catch {
-      badges.value = evaluateBadges(badgeInput)
-    }
+    badges.value = evaluateBadges(badgeInput)
     // 持久化：首次达成时间不覆盖
     const now = new Date().toISOString()
     const existing = await achievementRepo.all()

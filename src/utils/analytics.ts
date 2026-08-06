@@ -473,7 +473,17 @@ export function computeDailyBuckets(input: AnalyticsInput): Map<string, DailyBuc
             daysInWeek.push(key)
           }
         }
-        if (daysInWeek.length === 0) continue
+        if (daysInWeek.length === 0) {
+          // 本地该周无提交（历史截断等）：把周总量落到周起始日本地日，避免整周行数被丢
+          const fallbackKey = tz.dateKey(weekStart.toDate())
+          if (!map.has(fallbackKey)) {
+            map.set(fallbackKey, { date: fallbackKey, commits: [], additions: 0, deletions: 0 })
+          }
+          const b = map.get(fallbackKey)!
+          b.additions += w.a
+          b.deletions += w.d
+          continue
+        }
         const perDayA = w.a / daysInWeek.length
         const perDayD = w.d / daysInWeek.length
         for (const key of daysInWeek) {

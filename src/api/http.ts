@@ -226,7 +226,8 @@ function withRetry(client: AxiosInstance, platform: Platform) {
       const res = await client.request<T>(config)
       updateRateLimitFromHeaders(platform, res.headers as Record<string, string | undefined>)
       const etag = res.headers.etag
-      if (etag && (config.method ?? 'get').toLowerCase() === 'get') {
+      // 只缓存真正成功的 200；GitHub stats 202（未就绪）不能进缓存，否则会被 304 永久钉死
+      if (etag && res.status === 200 && (config.method ?? 'get').toLowerCase() === 'get') {
         etagCacheSet(cacheKey, { etag, data: res.data })
       }
       return res

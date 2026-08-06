@@ -26,6 +26,7 @@ export interface PaginateResult<T> {
 /**
  * 通用分页器：按 perPage 顺序拉取，直到下一页为空或达到 maxPages。
  * 有 Link header 时只信任 rel="next"；否则用「本页满页」启发式。
+ * 中途 Abort 会抛 AbortError，避免调用方把半截列表当成完整结果去删本地数据。
  */
 export async function paginateAll<T>(opts: PaginateOptions<T>): Promise<PaginateResult<T>> {
   const { http, url, perPage, maxPages = 100, params = {}, hasNext, signal } = opts
@@ -33,7 +34,9 @@ export async function paginateAll<T>(opts: PaginateOptions<T>): Promise<Paginate
   let truncated = false
 
   for (let page = 1; page <= maxPages; page++) {
-    if (signal?.aborted) break
+    if (signal?.aborted) {
+      throw new DOMException('同步已取消', 'AbortError')
+    }
     const config: AxiosRequestConfig = {
       params: { ...params, per_page: perPage, page },
       signal,

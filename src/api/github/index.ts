@@ -68,14 +68,14 @@ const githubAdapter: PlatformAdapter = {
     }
   },
 
-  async listRepos(token, opts): Promise<UnifiedRepo[]> {
+  async listRepos(token, opts) {
     const client = createGithubClient(token)
     const includeLanguages = opts?.includeLanguages === true
 
     // /user/repos 覆盖自有、协作者、组织成员仓库。
     // 注：提过 PR 但不是协作者的外部仓库留到 M5 PR/Issue 统计阶段通过 Search API 补齐，
     // 避免首次同步就消耗 Search 接口限流（30 次/分钟）导致整体卡住。
-    const { items: ownRepos } = await paginateAll<GithubRepo>({
+    const { items: ownRepos, truncated } = await paginateAll<GithubRepo>({
       http: client,
       url: '/user/repos',
       perPage: 100,
@@ -104,7 +104,10 @@ const githubAdapter: PlatformAdapter = {
       )
     }
 
-    return ownRepos.map((r, i) => mapRepo(r, languagesResults[i], me?.login))
+    return {
+      repos: ownRepos.map((r, i) => mapRepo(r, languagesResults[i], me?.login)),
+      truncated,
+    }
   },
 
   async getRepoLanguages(token, fullName, opts) {

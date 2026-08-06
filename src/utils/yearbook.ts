@@ -129,16 +129,25 @@ export function computeYearbook(input: YearbookInput): YearbookData {
     const ghStats = input.repoStats.filter(s => s.platform === 'github' && scopeRepoIds.has(s.repoId))
     for (const stat of ghStats) {
       const repoDays = ghDaysByRepo.get(stat.repoId)
-      if (!repoDays?.size) continue
       for (const w of stat.weeks) {
         if (!w.a && !w.d) continue
         const weekStart = dayjs.unix(w.w)
         const daysInWeek: string[] = []
-        for (let i = 0; i < 7; i++) {
-          const key = tz.dateKey(weekStart.add(i, 'day').toDate())
-          if (repoDays.has(key)) daysInWeek.push(key)
+        if (repoDays?.size) {
+          for (let i = 0; i < 7; i++) {
+            const key = tz.dateKey(weekStart.add(i, 'day').toDate())
+            if (repoDays.has(key)) daysInWeek.push(key)
+          }
         }
-        if (daysInWeek.length === 0) continue
+        if (daysInWeek.length === 0) {
+          // 本地无该周提交时，按周起始日落在所选年则整周计入，避免行数被丢
+          const fallbackKey = tz.dateKey(weekStart.toDate())
+          if (fallbackKey.startsWith(yearPrefix)) {
+            additions += w.a
+            deletions += w.d
+          }
+          continue
+        }
         const perDayA = w.a / daysInWeek.length
         const perDayD = w.d / daysInWeek.length
         for (const key of daysInWeek) {

@@ -67,11 +67,11 @@ const giteeAdapter: PlatformAdapter = {
     }
   },
 
-  async listRepos(token, opts): Promise<UnifiedRepo[]> {
+  async listRepos(token, opts) {
     const client = createGiteeClient(token)
     const includeLanguages = opts?.includeLanguages === true
     // type=all 同时覆盖自有与组织成员仓库
-    const { items: repos } = await paginateAll<GiteeRepo>({
+    const { items: repos, truncated } = await paginateAll<GiteeRepo>({
       http: client,
       url: '/user/repos',
       perPage: 100,
@@ -104,7 +104,10 @@ const giteeAdapter: PlatformAdapter = {
       )
     }
 
-    return unique.map((r, i) => mapRepo(r, languagesResults[i], me?.login))
+    return {
+      repos: unique.map((r, i) => mapRepo(r, languagesResults[i], me?.login)),
+      truncated,
+    }
   },
 
   async getRepoLanguages(token, fullName, opts) {

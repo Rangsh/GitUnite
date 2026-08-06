@@ -2,8 +2,6 @@ import AnalyticsWorker from './analytics.worker.ts?worker'
 
 type WorkerReq =
   | { type: 'yearbook', payload: unknown }
-  | { type: 'badges', payload: unknown }
-  | { type: 'collaboration', payload: unknown }
   | { type: 'dailyBuckets', payload: unknown }
 
 let worker: Worker | null = null
@@ -23,6 +21,7 @@ function getWorker() {
     worker.onerror = (err) => {
       for (const [, job] of pending) job.reject(new Error(err.message || 'worker error'))
       pending.clear()
+      worker = null
     }
   }
   return worker
@@ -32,7 +31,13 @@ function getWorker() {
 export function runInAnalyticsWorker<T>(req: WorkerReq): Promise<T> {
   const id = `w-${++seq}`
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve: v => resolve(v as T), reject })
-    getWorker().postMessage({ id, ...req })
+    try {
+      pending.set(id, { resolve: v => resolve(v as T), reject })
+      getWorker().postMessage({ id, ...req })
+    }
+    catch (e) {
+      pending.delete(id)
+      reject(e instanceof Error ? e : new Error(String(e)))
+    }
   })
 }

@@ -14,9 +14,11 @@ onMounted(async () => {
   await auth.restoreSession()
   void analytics.load()
 
-  // 已有同步记录时做轻量增量；首次不自动全量，避免打开即打穿配额
+  // 已有同步记录时，延迟做轻量增量，避免刚打开就和用户手动同步抢锁
   if (auth.anyConnected && await hasPreviouslySynced()) {
-    void start(undefined, { silent: true, recentOnly: true, recentDays: 30 })
+    window.setTimeout(() => {
+      void start(undefined, { silent: true, recentOnly: true, recentDays: 30 })
+    }, 2500)
   }
 })
 </script>

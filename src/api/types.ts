@@ -101,11 +101,12 @@ export interface PlatformAdapter {
   /**
    * 拉取当前用户的全部仓库（含私有、组织、fork）。
    * includeLanguages 默认 false：语言字节分布由同步层按需增量补齐，避免每次全量打接口。
+   * truncated=true 表示分页未拉完，调用方不得据此清理本地「缺失」仓库。
    */
   listRepos(
     token: string,
     opts?: AdapterRequestOptions & { includeLanguages?: boolean },
-  ): Promise<UnifiedRepo[]>
+  ): Promise<{ repos: UnifiedRepo[], truncated: boolean }>
 
   /** 拉取单个仓库的语言字节分布（成本：1 次请求） */
   getRepoLanguages?(

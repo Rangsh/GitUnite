@@ -2,6 +2,9 @@
  * 跨标签页同步互斥锁。
  * 优先 Web Locks API；不支持时退化为 localStorage 心跳锁。
  * 避免多标签同时同步把平台配额打穿。
+ *
+ * 注意：不要根据「本页 running=false」去 steal 锁——其它标签页同步中时会误抢。
+ * localStorage 锁靠 expiresAt 心跳过期自然释放；Web Locks 在页面关闭后由浏览器释放。
  */
 
 const LOCK_NAME = 'gitunite-sync'
@@ -47,7 +50,6 @@ function acquireViaStorage(): SyncLockHandle | null {
   const owner = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   storageWrite({ owner, expiresAt: now + STALE_MS })
 
-  // 竞态复核
   const verify = storageRead()
   if (!verify || verify.owner !== owner) return null
 
@@ -66,40 +68,43 @@ function acquireViaStorage(): SyncLockHandle | null {
   }
 }
 
-/**
- * 尝试获取同步锁。拿不到表示其他标签页正在同步。
- */
+async function acquireViaWebLocks(): Promise<SyncLockHandle | null> {
+  const locks = navigator.locks
+  if (!locks?.request) return null
+
+  let releaseHold: (() => void) | undefined
+  const hold = new Promise<void>((resolve) => {
+    releaseHold = resolve
+  })
+
+  let granted = false
+  const lockDone = locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
+    if (!lock) return
+    granted = true
+    await hold
+  })
+
+  await Promise.resolve()
+  await new Promise<void>(r => setTimeout(r, 0))
+
+  if (!granted) {
+    void lockDone
+    return null
+  }
+
+  return {
+    release: () => {
+      releaseHold?.()
+      void lockDone
+    },
+  }
+}
+
+/** 尝试获取同步锁。拿不到表示其他标签页（或本页后台任务）正在同步。 */
 export async function tryAcquireSyncLock(): Promise<SyncLockHandle | null> {
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
   if (locks?.request) {
-    let releaseHold: (() => void) | undefined
-    const hold = new Promise<void>((resolve) => {
-      releaseHold = resolve
-    })
-
-    let granted = false
-    const lockDone = locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
-      if (!lock) return
-      granted = true
-      await hold
-    })
-
-    // 等回调执行完 ifAvailable 判定
-    await Promise.resolve()
-    await new Promise<void>(r => setTimeout(r, 0))
-
-    if (!granted) {
-      void lockDone
-      return null
-    }
-
-    return {
-      release: () => {
-        releaseHold?.()
-        void lockDone
-      },
-    }
+    return await acquireViaWebLocks()
   }
-
   return acquireViaStorage()
 }
