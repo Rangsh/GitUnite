@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NTag, NSpace } from 'naive-ui'
+import { NButton, NTag, NSpace, NTooltip } from 'naive-ui'
 import { RefreshCw } from 'lucide-vue-next'
 import { useSync } from '@/composables/useSync'
 import { useAuthStore } from '@/stores/auth'
@@ -30,23 +30,37 @@ const label = computed(() => {
   }
   return t('common.syncOne')
 })
+
+const tip = computed(() => {
+  if (props.platform) {
+    return t('common.syncPlatform', {
+      name: props.platform === 'github' ? t('common.github') : t('common.gitee'),
+    })
+  }
+  return t('common.syncGlobalTip')
+})
 </script>
 
 <template>
   <NSpace align="center" :size="props.compact ? 6 : 'medium'">
-    <NButton
-      type="primary"
-      :size="props.compact ? 'small' : 'medium'"
-      :disabled="disabled"
-      :loading="running"
-      class="!rounded-lg"
-      @click="start(props.platform)"
-    >
-      <template #icon>
-        <RefreshCw :size="props.compact ? 14 : 16" />
+    <NTooltip :disabled="running || disabled">
+      <template #trigger>
+        <NButton
+          type="primary"
+          :size="props.compact ? 'small' : 'medium'"
+          :disabled="disabled"
+          :loading="running"
+          class="!rounded-lg"
+          @click="start(props.platform)"
+        >
+          <template #icon>
+            <RefreshCw :size="props.compact ? 14 : 16" />
+          </template>
+          {{ label }}
+        </NButton>
       </template>
-      {{ label }}
-    </NButton>
+      {{ tip }}
+    </NTooltip>
     <NButton v-if="running" quaternary size="small" @click="stop">
       {{ t('common.stop') }}
     </NButton>

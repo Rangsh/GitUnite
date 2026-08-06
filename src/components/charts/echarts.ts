@@ -7,7 +7,6 @@ import {
   LineChart,
   PieChart,
   HeatmapChart,
-  ScatterChart,
   GraphChart,
 } from 'echarts/charts'
 import {
@@ -18,8 +17,6 @@ import {
   CalendarComponent,
   VisualMapComponent,
   DataZoomComponent,
-  ToolboxComponent,
-  GraphicComponent,
 } from 'echarts/components'
 // 词云图表：副作用自注册到 echarts 单例
 import 'echarts-wordcloud'
@@ -30,7 +27,6 @@ use([
   LineChart,
   PieChart,
   HeatmapChart,
-  ScatterChart,
   GraphChart,
   TitleComponent,
   TooltipComponent,
@@ -39,8 +35,6 @@ use([
   CalendarComponent,
   VisualMapComponent,
   DataZoomComponent,
-  ToolboxComponent,
-  GraphicComponent,
 ])
 
 export { default as VChart } from 'vue-echarts'

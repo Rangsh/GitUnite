@@ -11,9 +11,12 @@ import { t } from '@/i18n'
 import type { Platform } from '@/api/types'
 
 export interface StartOptions {
-  /** 静默模式：不弹 Gitee 首次提示、不弹成功/失败 toast（启动自动同步用） */
+  /** 静默模式：不弹 Gitee 首次提示、不弹成功/失败 toast */
   silent?: boolean
-  /** 轻量增量：只同步近 N 天活跃的仓库 */
+  /**
+   * 轻量增量：只同步近 N 天内有更新的仓库（默认 30 天）。
+   * 可由调用方显式传入；应用不会在启动时自动同步。
+   */
   recentOnly?: boolean
   recentDays?: number
   /** 忽略游标，重新拉取完整提交历史 */
@@ -31,7 +34,7 @@ export function useSync() {
   const activeProgress = computed(() => syncStore.activeProgress)
 
   async function start(platform?: Platform, options: StartOptions = {}) {
-    // 本页已在同步：自动增量与手动点击共用同一把状态
+    // 已有同步在跑：跨按钮 / 跨页共用同一把状态，避免并发写库
     if (running.value) {
       if (!options.silent) {
         message.info(t('syncMsg.busy'))
@@ -85,7 +88,8 @@ export function useSync() {
         recentOnly: options.recentOnly,
         recentDays: options.recentDays,
         fullHistory: options.fullHistory,
-        backfillDetails: options.backfillDetails,
+        // 用户手动同步且开启了代码明细时，顺带补全历史缺行数（仍属主动点击）
+        backfillDetails: options.backfillDetails ?? uiStore.codeDetailEnabled,
       }
       if (platform) await syncPlatform(platform, syncOpts)
       else await syncAll(syncOpts)

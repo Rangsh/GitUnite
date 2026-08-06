@@ -187,5 +187,3 @@ export function computeCollaboration(input: CollaborationInput): CollaborationGr
     collaboratorsUnavailable: includeCollab && collaborators.length === 0 && activeRepos.length > 0,
   }
 }
-
-export { ME_NODE_ID }

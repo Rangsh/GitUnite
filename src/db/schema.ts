@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Platform, UnifiedCommit, UnifiedIssue, UnifiedRepo, UnifiedUser, SyncCursor } from '@/api/types'
+import type { Platform, UnifiedCommit, UnifiedIssue, UnifiedRepo, SyncCursor } from '@/api/types'
 
 export interface RepoWeeklyStat {
   /** 同 UnifiedRepo.id */
@@ -28,7 +28,6 @@ export interface AchievementRecord {
 }
 
 export class GitUniteDB extends Dexie {
-  users!: Table<UnifiedUser, string>
   repos!: Table<UnifiedRepo, string>
   commits!: Table<UnifiedCommit, string>
   issues!: Table<UnifiedIssue, string>
@@ -51,6 +50,11 @@ export class GitUniteDB extends Dexie {
     // M4：成就徽章本地状态
     this.version(2).stores({
       achievements: 'id, achievedAt, updatedAt',
+    })
+
+    // 用户信息仅存 Pinia 内存态，删除从未写入的 users 表
+    this.version(3).stores({
+      users: null,
     })
   }
 }

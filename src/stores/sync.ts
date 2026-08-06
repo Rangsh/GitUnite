@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import type { Platform } from '@/api/types'
 
-export type SyncPhase = 'idle' | 'repos' | 'commits' | 'pr-issues' | 'stats' | 'done' | 'error'
+export type SyncPhase = 'repos' | 'commits' | 'pr-issues' | 'done' | 'error'
 
 export interface SyncProgress {
   platform: Platform
@@ -32,7 +32,7 @@ export const useSyncStore = defineStore('sync', {
     },
     // 合并两个平台的进度信息，用于 UI 展示
     activeProgress(state): SyncProgress | null {
-      const activePhases = new Set<SyncPhase>(['repos', 'commits', 'pr-issues', 'stats'])
+      const activePhases = new Set<SyncPhase>(['repos', 'commits', 'pr-issues'])
       // 优先展示仍在跑的平台，避免一侧 error 盖住另一侧进行中的进度
       const running = (['github', 'gitee'] as Platform[]).find((p) => {
         const ph = state.progress[p]?.phase
@@ -50,10 +50,6 @@ export const useSyncStore = defineStore('sync', {
       if (p.phase === 'done') {
         this.lastSyncedAt = new Date().toISOString()
       }
-    },
-
-    resetPlatform(platform: Platform) {
-      this.progress[platform] = null
     },
 
     resetAll() {

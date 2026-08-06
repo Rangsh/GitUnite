@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
   NConfigProvider, NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
-  NMenu, NIcon, NText, NTag, NButton, NTooltip, darkTheme, type GlobalThemeOverrides,
+  NMenu, NIcon, NText, NTag, NButton, NTooltip, type GlobalThemeOverrides,
 } from 'naive-ui'
 import {
   Award,
@@ -163,7 +163,8 @@ function handleMenuSelect(key: string) {
 </script>
 
 <template>
-  <NConfigProvider :theme="isDark ? darkTheme : null" :theme-overrides="themeOverrides">
+  <!-- 主题由 App.vue 的 NConfigProvider 提供；此处仅叠加品牌色覆盖 -->
+  <NConfigProvider :theme-overrides="themeOverrides">
     <NLayout class="h-full" has-sider>
       <NLayoutSider
         bordered

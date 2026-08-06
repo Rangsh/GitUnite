@@ -44,7 +44,9 @@ const badgeDesc = computed(() => t(`badges.${props.badge.id}.description`))
         width="80"
         height="80"
         class="h-20 w-20 object-contain"
-        :class="badge.earned ? 'opacity-100 drop-shadow-md' : 'opacity-40 grayscale'"
+        :class="badge.earned
+          ? 'opacity-100 drop-shadow-[0_6px_12px_rgba(15,23,42,0.25)]'
+          : 'opacity-40 grayscale'"
         @error="imgFailed = true"
       >
       <component

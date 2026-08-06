@@ -22,7 +22,6 @@ async function clearAll() {
     db.cursors.clear(),
     db.repoStats.clear(),
     db.achievements.clear(),
-    db.users.clear(),
   ])
   clearEtagCache()
   useAnalyticsStore().reset()

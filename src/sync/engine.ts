@@ -18,7 +18,7 @@ export interface SyncOptions {
   repoIds?: string[]
   /**
    * 轻量增量：只同步最近 N 天内有更新的仓库（默认 30 天）。
-   * 启动自动同步时使用，避免对长期不活跃的仓库发起请求。
+   * 需调用方显式传入；应用不会在启动时自动同步。
    */
   recentOnly?: boolean
   recentDays?: number
@@ -504,12 +504,4 @@ export async function syncAll(options?: SyncOptions) {
 export async function isGiteeFirstSync(): Promise<boolean> {
   const count = await db.cursors.where('platform').equals('gitee').count()
   return count === 0
-}
-
-/**
- * 是否已经做过至少一次同步（存在任意游标）。
- * 启动自动增量只在已有数据时运行，避免首次打开就触发耗时的全量同步。
- */
-export async function hasPreviouslySynced(): Promise<boolean> {
-  return await db.cursors.count() > 0
 }

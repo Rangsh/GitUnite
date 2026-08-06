@@ -58,7 +58,7 @@ const shareData = computed(() => {
     nickname,
     hideIdentity: hideIdentity.value,
     totalCommits: basic.commitCount,
-    languageCount: languages.length,
+    languageCount: languages.filter(l => l.language !== '其他' && l.language !== 'Other').length,
     activeDays: activity.activeDays,
     longestStreak: activity.longestStreak,
     topLanguages: languages.slice(0, 3).map(l => ({ language: l.language, percentage: l.percentage })),
@@ -108,8 +108,7 @@ async function renderPng(): Promise<Blob | null> {
   const dataUrl = await toPng(node, {
     pixelRatio: 2,
     cacheBust: true,
-    backgroundColor: '#ffffff',
-    // 徽章 webp 与头像均为同域 / dataURL，无需额外处理
+    backgroundColor: '#0b1220',
   })
   const res = await fetch(dataUrl)
   return await res.blob()
@@ -170,7 +169,7 @@ async function copy() {
   <NModal
     :show="show"
     @update:show="doClose"
-    style="width: 720px; max-width: 94vw;"
+    style="width: 760px; max-width: 96vw;"
     :bordered="false"
     preset="card"
     :title="t('share.title')"
@@ -189,11 +188,11 @@ async function copy() {
         <NSwitch v-model:value="hideIdentity" />
       </label>
 
-      <!-- 预览：1200x630 缩放到 600 宽显示（截图仍按原始 1200x630 @2x） -->
-      <div class="overflow-hidden rounded-xl border border-ink-200 bg-ink-100/60 p-3">
+      <!-- 预览：1200×630 海报缩放到 640 宽 -->
+      <div class="overflow-hidden rounded-xl border border-ink-200 bg-[#0b1220] p-3 shadow-panel dark:border-ink-700">
         <NSpin :show="generating">
-          <div class="mx-auto" style="width: 600px; height: 315px; overflow: hidden;">
-            <div style="transform: scale(0.5); transform-origin: top left; width: 1200px; height: 630px;">
+          <div class="mx-auto overflow-hidden rounded-lg" style="width: 640px; height: 336px; max-width: 100%;">
+            <div style="transform: scale(0.5333); transform-origin: top left; width: 1200px; height: 630px;">
               <ShareCard ref="cardRef" :data="shareData" />
             </div>
           </div>

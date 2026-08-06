@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { NSelect, NSwitch, NText } from 'naive-ui'
 import { useUiStore, type ThemeMode } from '@/stores/ui'
-import { useSync } from '@/composables/useSync'
 import { isValidTimezone, dayjs } from '@/utils/date'
 import type { AppLocale } from '@/i18n'
 
 const { t } = useI18n()
 const ui = useUiStore()
 const { codeDetailEnabled, timezone, theme, locale } = storeToRefs(ui)
-const { start } = useSync()
 
 const guessed = dayjs.tz.guess() || 'UTC'
 
@@ -47,12 +45,6 @@ const localeOptions = computed(() => [
   { label: '简体中文', value: 'zh-CN' satisfies AppLocale },
   { label: 'English', value: 'en-US' satisfies AppLocale },
 ])
-
-watch(codeDetailEnabled, (on, was) => {
-  if (on && was === false) {
-    void start(undefined, { silent: false, backfillDetails: true })
-  }
-})
 
 function onLocaleUpdate(v: AppLocale) {
   ui.setLocale(v)

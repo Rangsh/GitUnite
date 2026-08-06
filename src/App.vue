@@ -8,8 +8,6 @@ import { storeToRefs } from 'pinia'
 import { useAuthStore } from './stores/auth'
 import { useAnalyticsStore } from './stores/analytics'
 import { useUiStore } from './stores/ui'
-import { useSync } from './composables/useSync'
-import { hasPreviouslySynced } from './sync/engine'
 import { setAppLocale } from './i18n'
 import { setFeedbackLocale } from './composables/useFeedback'
 
@@ -17,7 +15,6 @@ const auth = useAuthStore()
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const { locale, isDark } = storeToRefs(ui)
-const { start } = useSync()
 
 const naiveLocale = computed(() => (locale.value === 'zh-CN' ? zhCN : enUS))
 const naiveDateLocale = computed(() => (locale.value === 'zh-CN' ? dateZhCN : dateEnUS))
@@ -33,13 +30,8 @@ watch(locale, (loc) => {
 
 onMounted(async () => {
   await auth.restoreSession()
+  // 只加载本地已有数据；同步必须由用户手动点击触发
   void analytics.load()
-
-  if (auth.anyConnected && await hasPreviouslySynced()) {
-    window.setTimeout(() => {
-      void start(undefined, { silent: true, recentOnly: true, recentDays: 30 })
-    }, 2500)
-  }
 })
 </script>
 

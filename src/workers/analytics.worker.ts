@@ -4,20 +4,20 @@
  * 含 Vue 组件（徽章 icon）或 Map 的结果留在主线程。
  */
 import { computeYearbook, type YearbookInput, type YearbookData } from '../utils/yearbook'
-import { computeDailyBuckets, type AnalyticsInput } from '../utils/analytics'
+import { computeDailyBuckets, type AnalyticsInput, type DailyBucket } from '../utils/analytics'
 
 type Req =
   | { id: string, type: 'yearbook', payload: YearbookInput }
   | { id: string, type: 'dailyBuckets', payload: AnalyticsInput }
 
 type Out =
-  | { id: string, ok: true, result: YearbookData | ReturnType<typeof computeDailyBuckets> }
+  | { id: string, ok: true, result: YearbookData | Map<string, DailyBucket> }
   | { id: string, ok: false, error: string }
 
 self.onmessage = (ev: MessageEvent<Req>) => {
   const msg = ev.data
   try {
-    let result: unknown
+    let result: YearbookData | Map<string, DailyBucket>
     switch (msg.type) {
       case 'yearbook':
         result = computeYearbook(msg.payload)
@@ -28,7 +28,7 @@ self.onmessage = (ev: MessageEvent<Req>) => {
       default:
         throw new Error('unknown worker type')
     }
-    const out: Out = { id: msg.id, ok: true, result: result as YearbookData }
+    const out: Out = { id: msg.id, ok: true, result }
     self.postMessage(out)
   }
   catch (e) {

@@ -1,7 +1,7 @@
 {
   "name": "gitunite",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "多平台代码仓库聚合分析工具 - 本地运行",
   "scripts": {
@@ -19,7 +19,6 @@
     "dexie": "^4.0.0",
     "echarts": "^5.5.0",
     "echarts-wordcloud": "^2.1.0",
-    "es-toolkit": "^1.0.0",
     "html-to-image": "^1.11.0",
     "lucide-vue-next": "^0.400.0",
     "naive-ui": "^2.38.0",
