@@ -71,7 +71,7 @@ const giteeAdapter: PlatformAdapter = {
     const client = createGiteeClient(token)
     const includeLanguages = opts?.includeLanguages === true
     // type=all 同时覆盖自有与组织成员仓库
-    const repos = await paginateAll<GiteeRepo>({
+    const { items: repos } = await paginateAll<GiteeRepo>({
       http: client,
       url: '/user/repos',
       perPage: 100,
@@ -113,18 +113,19 @@ const giteeAdapter: PlatformAdapter = {
     return normalizeLanguageMap(data)
   },
 
-  async listCommits(token, repo, userLogin, since?, opts?): Promise<UnifiedCommit[]> {
+  async listCommits(token, repo, userLogin, since?, opts?) {
     const client = createGiteeClient(token)
     const params: Record<string, unknown> = {}
     if (since) params.since = since
+    if (opts?.until) params.until = opts.until
 
     // Gitee 的 author 查询参数经常直接返回空数组（与 GitHub 行为不一致）。
     // 策略：先不带 author 拉取，再在本地按 login / name 过滤。
     // 因此必须严控 maxPages，避免组织大仓把配额打穿。
     const maxPages = opts?.maxPages
-      ?? (since ? GITEE_COMMIT_MAX_PAGES_INCREMENTAL : GITEE_COMMIT_MAX_PAGES_FULL)
+      ?? (since || opts?.until ? GITEE_COMMIT_MAX_PAGES_INCREMENTAL : GITEE_COMMIT_MAX_PAGES_FULL)
 
-    const raw = await paginateAll<GiteeCommit>({
+    const { items: raw, truncated } = await paginateAll<GiteeCommit>({
       http: client,
       url: `/repos/${repo.fullName}/commits`,
       perPage: 100,
@@ -133,9 +134,12 @@ const giteeAdapter: PlatformAdapter = {
       params,
     })
 
-    return raw
-      .filter(c => isCommitByUser(c, userLogin) && !!c.commit?.author?.date)
-      .map(c => mapCommit(c, repo))
+    return {
+      commits: raw
+        .filter(c => isCommitByUser(c, userLogin) && !!c.commit?.author?.date)
+        .map(c => mapCommit(c, repo)),
+      truncated,
+    }
   },
 
   async getCommitDetail(token, repo, sha, opts) {

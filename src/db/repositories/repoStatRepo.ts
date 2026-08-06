@@ -21,4 +21,9 @@ export const repoStatRepo = {
   async removeByPlatform(platform: Platform) {
     await db.repoStats.where('platform').equals(platform).delete()
   },
+
+  async removeByRepoIds(repoIds: string[]) {
+    if (!repoIds.length) return
+    await db.repoStats.bulkDelete(repoIds)
+  },
 }

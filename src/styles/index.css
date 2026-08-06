@@ -10,8 +10,26 @@
   --gu-muted: #64748b;
   --gu-accent: #0d9488;
   --gu-accent-soft: #ccfbf1;
+  --gu-danger: #dc2626;
+  --gu-radius: 16px;
+  --gu-shadow-panel: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
   color-scheme: light;
   font-family: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--gu-ink);
+  background: var(--gu-bg);
+}
+
+html.dark {
+  --gu-bg: #0b1220;
+  --gu-surface: #111827;
+  --gu-border: #1e293b;
+  --gu-ink: #f1f5f9;
+  --gu-muted: #94a3b8;
+  --gu-accent: #14b8a6;
+  --gu-accent-soft: rgba(20, 184, 166, 0.18);
+  --gu-danger: #f87171;
+  --gu-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+  color-scheme: dark;
   color: var(--gu-ink);
   background: var(--gu-bg);
 }
@@ -30,11 +48,25 @@ body {
     var(--gu-bg);
 }
 
+html.dark body {
+  background:
+    radial-gradient(1200px 600px at 0% -10%, rgba(20, 184, 166, 0.12), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(56, 189, 248, 0.06), transparent 50%),
+    var(--gu-bg);
+}
+
 /* 数字 KPI：等宽、紧凑字距 */
 .gu-metric {
   font-family: 'JetBrains Mono', Consolas, monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+}
+
+.gu-panel {
+  border-radius: var(--gu-radius);
+  border: 1px solid var(--gu-border);
+  background: var(--gu-surface);
+  box-shadow: var(--gu-shadow-panel);
 }
 
 @media (prefers-reduced-motion: reduce) {

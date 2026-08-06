@@ -105,8 +105,39 @@ function getPlatformPool(platform: Platform) {
   return platformPools[platform]!
 }
 
-// 内存 ETag 缓存：url -> { etag, data }
+// 内存 ETag 缓存：cacheKey -> { etag, data }；LRU 上限防止长会话膨胀
+const ETAG_CACHE_MAX = 500
 const etagCache = new Map<string, { etag: string, data: unknown }>()
+
+function stableSerializeParams(params: unknown): string {
+  if (!params || typeof params !== 'object') return ''
+  const entries = Object.entries(params as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
+  return entries.map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join('&')
+}
+
+function etagCacheKey(config: AxiosRequestConfig): string {
+  const method = (config.method ?? 'get').toLowerCase()
+  const url = config.url ?? ''
+  const base = config.baseURL ?? ''
+  return `${method}:${base}${url}?${stableSerializeParams(config.params)}`
+}
+
+function etagCacheSet(key: string, value: { etag: string, data: unknown }) {
+  if (etagCache.has(key)) etagCache.delete(key)
+  etagCache.set(key, value)
+  while (etagCache.size > ETAG_CACHE_MAX) {
+    const oldest = etagCache.keys().next().value
+    if (oldest === undefined) break
+    etagCache.delete(oldest)
+  }
+}
+
+/** 断开账号 / 清数据时丢弃条件请求缓存，避免串平台脏读 */
+export function clearEtagCache() {
+  etagCache.clear()
+}
 
 const rateLimitWaiters: Partial<Record<Platform, Promise<void>>> = {}
 
@@ -181,11 +212,11 @@ function resolveRetryResetAt(headers: unknown): string | undefined {
 
 function withRetry(client: AxiosInstance, platform: Platform) {
   async function request<T>(config: AxiosRequestConfig, attempt = 0): Promise<AxiosResponse<T>> {
-    const url = config.url ?? ''
-    if ((config.method ?? 'get').toLowerCase() === 'get' && etagCache.has(url)) {
+    const cacheKey = etagCacheKey(config)
+    if ((config.method ?? 'get').toLowerCase() === 'get' && etagCache.has(cacheKey)) {
       config.headers = {
         ...config.headers,
-        'If-None-Match': etagCache.get(url)!.etag,
+        'If-None-Match': etagCache.get(cacheKey)!.etag,
       }
     }
 
@@ -196,7 +227,7 @@ function withRetry(client: AxiosInstance, platform: Platform) {
       updateRateLimitFromHeaders(platform, res.headers as Record<string, string | undefined>)
       const etag = res.headers.etag
       if (etag && (config.method ?? 'get').toLowerCase() === 'get') {
-        etagCache.set(url, { etag, data: res.data })
+        etagCacheSet(cacheKey, { etag, data: res.data })
       }
       return res
     }
@@ -212,10 +243,10 @@ function withRetry(client: AxiosInstance, platform: Platform) {
       const status = err.response.status
       updateRateLimitFromHeaders(platform, err.response.headers as Record<string, string | undefined>)
 
-      if (status === 304 && etagCache.has(url)) {
+      if (status === 304 && etagCache.has(cacheKey)) {
         return {
           ...err.response,
-          data: etagCache.get(url)!.data as T,
+          data: etagCache.get(cacheKey)!.data as T,
           status: 200,
         } as AxiosResponse<T>
       }

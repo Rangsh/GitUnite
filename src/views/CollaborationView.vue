@@ -210,6 +210,14 @@ function firstLine(msg: string) {
                 </template>
                 为保证流畅，仅展示共同提交最多的 60 位协作者
               </NTooltip>
+              <NTooltip v-if="graph.collaboratorsUnavailable">
+                <template #trigger>
+                  <NTag size="small" type="info" :bordered="false" class="!rounded-lg">
+                    仅仓库图
+                  </NTag>
+                </template>
+                当前同步只缓存「你自己」的提交，无法推断协作者。二级节点将在后续补齐共同作者数据后可用。
+              </NTooltip>
             </div>
           </div>
 
@@ -254,6 +262,14 @@ function firstLine(msg: string) {
           <NTag size="small" type="info" :bordered="false" class="!rounded-lg">
             我的提交 {{ formatNumber(graph?.nodes.find(n => n.id === selectedRepo?.id)?.value ?? 0) }}
           </NTag>
+          <NButton
+            size="small"
+            quaternary
+            class="!rounded-lg"
+            @click="selectedRepoId = null"
+          >
+            取消选中
+          </NButton>
           <NButton
             size="small"
             tag="a"

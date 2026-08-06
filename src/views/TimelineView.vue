@@ -254,9 +254,14 @@ const rangeLabel = computed(() => `${selectedYear.value} 年`)
       >
         <NEmpty description="还没有提交数据。请按当前视角做一次全量同步。">
           <template #extra>
-            <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
-              {{ syncLabel }}
-            </NButton>
+            <div class="mt-3 flex flex-col items-center gap-2">
+              <NButton type="primary" class="!rounded-xl" :loading="running" @click="syncByScope">
+                {{ syncLabel }}
+              </NButton>
+              <NButton v-if="!auth.anyConnected" quaternary size="small" @click="$router.push('/settings')">
+                去设置连接账号
+              </NButton>
+            </div>
           </template>
         </NEmpty>
       </div>

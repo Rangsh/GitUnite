@@ -79,6 +79,11 @@ export interface SyncCursor {
   lastCommitSha: string | null
   lastSyncedAt: string | null
   etag: string | null
+  /**
+   * 提交历史因 maxPages 被截断，更早的页面尚未拉到。
+   * 为 true 时 UI 应提示「历史可能不完整」，并由引擎用 until 向更早方向补拉。
+   */
+  historyTruncated?: boolean
 }
 
 /** 平台适配器接口 */
@@ -115,8 +120,12 @@ export interface PlatformAdapter {
     repo: UnifiedRepo,
     userLogin: string,
     since?: string,
-    opts?: AdapterRequestOptions & { maxPages?: number },
-  ): Promise<UnifiedCommit[]>
+    opts?: AdapterRequestOptions & {
+      maxPages?: number
+      /** 只拉早于该时间的提交（ISO），用于截断后向更早历史补拉 */
+      until?: string
+    },
+  ): Promise<{ commits: UnifiedCommit[], truncated: boolean }>
 
   /** 拉取单个提交的详情，补齐 additions/deletions/filesChanged（成本较高，按需调用） */
   getCommitDetail?(

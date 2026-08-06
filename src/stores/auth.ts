@@ -3,6 +3,7 @@ import { useStorage } from '@vueuse/core'
 import { ref } from 'vue'
 import type { Platform, UnifiedUser } from '@/api/types'
 import { getAdapter } from '@/api'
+import { clearEtagCache } from '@/api/http'
 import { setRateLimit } from '@/api/rateLimit'
 import { db } from '@/db/schema'
 import { useAnalyticsStore } from '@/stores/analytics'
@@ -89,6 +90,7 @@ export const useAuthStore = defineStore('auth', {
       this.users[platform] = null
       this.rateLimits[platform] = null
       setRateLimit(platform, null)
+      clearEtagCache()
       // 同步清除该平台的全部缓存数据
       await Promise.all([
         db.repos.where('platform').equals(platform).delete(),
@@ -97,6 +99,10 @@ export const useAuthStore = defineStore('auth', {
         db.cursors.where('platform').equals(platform).delete(),
         db.repoStats.where('platform').equals(platform).delete(),
       ])
+      // 两平台都断开时清空成就（徽章为全生涯累计）
+      if (!this.githubToken && !this.giteeToken) {
+        await db.achievements.clear()
+      }
       // 强制重载分析内存缓存，避免看板继续展示已断开平台的旧数据
       void useAnalyticsStore().refresh()
     },

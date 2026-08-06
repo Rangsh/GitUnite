@@ -14,14 +14,23 @@ interface PaginateOptions<T> {
   signal?: AbortSignal
 }
 
+export interface PaginateResult<T> {
+  items: T[]
+  /**
+   * 因 maxPages 提前停止，且服务端仍可能有下一页。
+   * 调用方不应把「截断后的最新水位」当作完整历史已拉完。
+   */
+  truncated: boolean
+}
+
 /**
  * 通用分页器：按 perPage 顺序拉取，直到下一页为空或达到 maxPages。
- * 解析 Link header 中 rel="next" 判断是否还有下一页；没有 Link header 时退化为
- * "本页返回数量 < perPage 即结束"。
+ * 有 Link header 时只信任 rel="next"；否则用「本页满页」启发式。
  */
-export async function paginateAll<T>(opts: PaginateOptions<T>): Promise<T[]> {
+export async function paginateAll<T>(opts: PaginateOptions<T>): Promise<PaginateResult<T>> {
   const { http, url, perPage, maxPages = 100, params = {}, hasNext, signal } = opts
   const results: T[] = []
+  let truncated = false
 
   for (let page = 1; page <= maxPages; page++) {
     if (signal?.aborted) break
@@ -36,11 +45,15 @@ export async function paginateAll<T>(opts: PaginateOptions<T>): Promise<T[]> {
     const link = (res.headers?.link as string | undefined) ?? ''
     const hasNextPage = hasNext
       ? hasNext(page, items, { link })
-      : link.includes('rel="next"')
-        ? true
+      : link
+        ? link.includes('rel="next"')
         : items.length >= perPage
 
     if (!hasNextPage) break
+    if (page === maxPages) {
+      truncated = true
+      break
+    }
   }
-  return results
+  return { items: results, truncated }
 }

@@ -17,4 +17,21 @@ export const cursorRepo = {
   async removeByPlatform(platform: Platform) {
     await db.cursors.where('platform').equals(platform).delete()
   },
+
+  async removeByRepoIds(platform: Platform, repoIds: string[]) {
+    if (!repoIds.length) return
+    await db.transaction('rw', db.cursors, async () => {
+      for (const repoId of repoIds) {
+        await db.cursors.where({ platform, repoId }).delete()
+      }
+    })
+  },
+
+  /** 是否存在任一仓库的历史截断标记 */
+  async hasTruncated(platform?: Platform): Promise<boolean> {
+    const rows = platform
+      ? await db.cursors.where('platform').equals(platform).toArray()
+      : await db.cursors.toArray()
+    return rows.some(c => c.historyTruncated)
+  },
 }

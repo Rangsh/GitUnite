@@ -20,6 +20,12 @@ export const repoRepo = {
     await db.repos.where('platform').equals(platform).delete()
   },
 
+  /** 删除指定 id 的仓库（远端已消失时用） */
+  async removeByIds(ids: string[]) {
+    if (!ids.length) return
+    await db.repos.bulkDelete(ids)
+  },
+
   async count(platform?: Platform) {
     return platform ? db.repos.where('platform').equals(platform).count() : db.repos.count()
   },

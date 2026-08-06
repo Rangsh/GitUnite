@@ -13,6 +13,12 @@ const palette = [
   '#10b981', '#f97316', '#64748b', '#06b6d4', '#84cc16',
 ]
 
+function colorOf(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return palette[h % palette.length]
+}
+
 const option = computed(() => {
   const max = Math.max(...props.data.map(d => d.value), 1)
   return {
@@ -31,7 +37,7 @@ const option = computed(() => {
         width: '92%',
         height: '92%',
         sizeRange: [14, 52],
-        rotationRange: [-30, 30],
+        rotationRange: [-15, 15],
         rotationStep: 15,
         gridSize: 8,
         drawOutOfBound: false,
@@ -39,7 +45,6 @@ const option = computed(() => {
         textStyle: {
           fontFamily: '"DM Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
           fontWeight: 600,
-          color: () => palette[Math.floor(Math.random() * palette.length)],
         },
         emphasis: {
           textStyle: { textShadowBlur: 8, textShadowColor: 'rgba(13,148,136,0.4)' },
@@ -47,8 +52,10 @@ const option = computed(() => {
         data: props.data.map(d => ({
           name: d.name,
           value: d.value,
-          // 线性映射字号，避免最大词独占画面
-          textStyle: { fontSize: 14 + (d.value / max) * 38 },
+          textStyle: {
+            fontSize: 14 + (d.value / max) * 38,
+            color: colorOf(d.name),
+          },
         })),
       },
     ],

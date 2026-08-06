@@ -22,6 +22,15 @@ export const commitRepo = {
     await db.commits.where('platform').equals(platform).delete()
   },
 
+  async removeByRepoIds(repoIds: string[]) {
+    if (!repoIds.length) return
+    await db.transaction('rw', db.commits, async () => {
+      for (const id of repoIds) {
+        await db.commits.where('repoId').equals(id).delete()
+      }
+    })
+  },
+
   async count(platform?: Platform) {
     return platform
       ? db.commits.where('platform').equals(platform).count()

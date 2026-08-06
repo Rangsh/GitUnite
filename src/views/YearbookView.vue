@@ -2,29 +2,29 @@
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
-  NButton, NEmpty, NSpin, NTag, NText, NTooltip,
+  NEmpty, NSpin, NTag, NText, NTooltip,
 } from 'naive-ui'
 import {
   Award, CalendarDays, CalendarRange, Code2, FileCode2,
-  Flame, GitCommitHorizontal, Moon, Plus, RefreshCw, Sun,
+  Flame, GitCommitHorizontal, Moon, Plus, Sun,
 } from 'lucide-vue-next'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
-import { useSync } from '@/composables/useSync'
 import { achievementRepo } from '@/db/repositories'
-import { availableYears, computeYearbook, type YearbookData } from '@/utils/yearbook'
+import { availableYears, computeYearbook, yearbookStory, type YearbookData } from '@/utils/yearbook'
 import { evaluateBadges, type BadgeStatus } from '@/utils/badges'
 import type { AnalyticsScope } from '@/utils/analytics'
 import { resolveTimezone, dayjs, formatNumber } from '@/utils/date'
+import { runInAnalyticsWorker } from '@/workers/runAnalytics'
 import { WordCloud } from '@/components/charts'
 import StatCard from '@/components/common/StatCard.vue'
 import BadgeCard from '@/components/yearbook/BadgeCard.vue'
+import SyncButton from '@/components/sync/SyncButton.vue'
 
 const analytics = useAnalyticsStore()
 const ui = useUiStore()
 const auth = useAuthStore()
-const { start, running } = useSync()
 const { timezone } = storeToRefs(ui)
 
 const scope = ref<AnalyticsScope>('all')
@@ -68,7 +68,15 @@ async function recompute() {
   }
 
   try {
-    data.value = computeYearbook({ ...baseInput, scope: scope.value, year: year.value })
+    try {
+      data.value = await runInAnalyticsWorker<YearbookData>({
+        type: 'yearbook',
+        payload: { ...baseInput, scope: scope.value, year: year.value },
+      })
+    }
+    catch {
+      data.value = computeYearbook({ ...baseInput, scope: scope.value, year: year.value })
+    }
   }
   catch (e) {
     console.error('[yearbook] compute failed', e)
@@ -79,19 +87,31 @@ async function recompute() {
 
   try {
     // 徽章为全生涯、跨平台累计，不受年鉴 scope/年份影响
-    badges.value = evaluateBadges({
+    const badgeInput = {
       ...baseInput,
       me: {
         github: auth.user('github')?.login ?? null,
         gitee: auth.user('gitee')?.login ?? null,
       },
-    })
-    // 持久化达成状态到 IndexedDB（PRD 3.8）
+    }
+    try {
+      badges.value = await runInAnalyticsWorker<BadgeStatus[]>({ type: 'badges', payload: badgeInput })
+    }
+    catch {
+      badges.value = evaluateBadges(badgeInput)
+    }
+    // 持久化：首次达成时间不覆盖
     const now = new Date().toISOString()
+    const existing = await achievementRepo.all()
+    const existingMap = new Map(existing.map(e => [e.id, e]))
     void achievementRepo.bulkPut(
       badges.value
         .filter(b => b.earned)
-        .map(b => ({ id: b.id, achievedAt: b.achievedAt, updatedAt: now })),
+        .map(b => ({
+          id: b.id,
+          achievedAt: existingMap.get(b.id)?.achievedAt ?? b.achievedAt,
+          updatedAt: now,
+        })),
     )
   }
   catch (e) {
@@ -124,6 +144,11 @@ const scopeTabs = computed(() => [
 
 const earnedCount = computed(() => badges.value.filter(b => b.earned).length)
 
+const sortedBadges = computed(() =>
+  [...badges.value].sort((a, b) => Number(b.earned) - Number(a.earned)))
+
+const story = computed(() => (data.value ? yearbookStory(data.value) : ''))
+
 const mostActiveMonthText = computed(() =>
   data.value?.mostActiveMonth != null ? MONTHS[data.value.mostActiveMonth] : '—')
 const mostActiveWeekdayText = computed(() =>
@@ -144,18 +169,21 @@ const mostActiveHourText = computed(() =>
           按本地时区归桶的年度编程年鉴，与累计成就徽章
         </p>
       </div>
-      <NButton type="primary" class="!rounded-xl" :loading="running" @click="scope === 'all' ? start() : start(scope)">
-        <template #icon><RefreshCw :size="15" /></template>
-        同步数据
-      </NButton>
+      <SyncButton :platform="scope === 'all' ? undefined : scope" />
     </header>
 
     <NSpin :show="(analytics.loading || computing) && !data">
       <div
         v-if="!hasData && !analytics.loading && !computing"
-        class="rounded-2xl border border-dashed border-ink-200 bg-white/70 px-6 py-20 text-center"
+        class="rounded-2xl border border-dashed border-ink-200 bg-white/70 px-6 py-20 text-center animate-fade-up"
       >
-        <NEmpty description="还没有提交数据。同步后生成你的编程年鉴。" />
+        <NEmpty description="还没有提交数据。同步后生成你的编程年鉴。">
+          <template #extra>
+            <div class="mt-3 flex justify-center">
+              <SyncButton />
+            </div>
+          </template>
+        </NEmpty>
       </div>
 
       <div v-else class="space-y-5">
@@ -191,8 +219,16 @@ const mostActiveHourText = computed(() =>
         </section>
 
         <template v-if="data && data.hasData">
+          <!-- 年度故事 -->
+          <section class="rounded-2xl border border-brand-200/80 bg-gradient-to-br from-brand-50 to-white px-5 py-4 shadow-panel animate-fade-up">
+            <p class="m-0 text-sm leading-relaxed text-ink-700">
+              <span class="mr-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-700">Year Story</span>
+              {{ story }}
+            </p>
+          </section>
+
           <!-- 年度 KPI -->
-          <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <section class="grid grid-cols-2 gap-3 lg:grid-cols-4 animate-fade-up" style="animation-delay: 60ms">
             <StatCard
               :label="`${data.year} 年提交`"
               :value="formatNumber(data.commitCount)"
@@ -291,7 +327,7 @@ const mostActiveHourText = computed(() =>
                       :key="l.language"
                       :bordered="false"
                       class="!rounded-lg"
-                      :style="{ background: ['#ccfbf1', '#e0f2fe', '#fef3c7', '#fee2e2', '#ede9fe'][i % 5], color: '#0f172a' }"
+                      :style="{ background: ['#ccfbf1', '#e0f2fe', '#fef3c7', '#e2e8f0', '#f1f5f9'][i % 5], color: '#0f172a' }"
                     >
                       {{ l.language }} · {{ l.count }}
                     </NTag>
@@ -343,11 +379,17 @@ const mostActiveHourText = computed(() =>
           v-else-if="data && !data.hasData"
           class="rounded-2xl border border-dashed border-ink-200 bg-white/70 px-6 py-16 text-center"
         >
-          <NEmpty :description="`${year} 年没有提交记录`" />
+          <NEmpty :description="`${year} 年没有提交记录，可切换上方年份查看`">
+            <template #extra>
+              <div class="mt-3 flex justify-center">
+                <SyncButton :platform="scope === 'all' ? undefined : scope" />
+              </div>
+            </template>
+          </NEmpty>
         </div>
 
         <!-- 徽章：全生涯累计 -->
-        <section class="overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-panel">
+        <section class="overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-panel animate-fade-up" style="animation-delay: 120ms">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
             <div>
               <h2 class="m-0 flex items-center gap-2 text-base font-semibold text-ink-900">
@@ -358,7 +400,7 @@ const mostActiveHourText = computed(() =>
           </div>
           <div class="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3 lg:grid-cols-5">
             <BadgeCard
-              v-for="b in badges"
+              v-for="b in sortedBadges"
               :key="b.id"
               :badge="b"
             />

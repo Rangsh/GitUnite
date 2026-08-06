@@ -18,6 +18,8 @@ export interface StartOptions {
   recentDays?: number
   /** 忽略游标，重新拉取完整提交历史 */
   fullHistory?: boolean
+  /** 为缺行数的 Gitee 提交补拉明细 */
+  backfillDetails?: boolean
 }
 
 export function useSync() {
@@ -69,6 +71,7 @@ export function useSync() {
         recentOnly: options.recentOnly,
         recentDays: options.recentDays,
         fullHistory: options.fullHistory,
+        backfillDetails: options.backfillDetails,
       }
       if (platform) await syncPlatform(platform, syncOpts)
       else await syncAll(syncOpts)

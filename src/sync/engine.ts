@@ -9,6 +9,8 @@ import { db } from '@/db/schema'
 
 /** 单次同步内 Gitee 代码明细最多请求数，防止长历史把账号打穿 */
 const MAX_GITEE_DETAILS_PER_SYNC = 200
+/** 单次同步内向更早历史补拉的轮数上限 */
+const MAX_HISTORY_BACKFILL_ROUNDS = 3
 
 export interface SyncOptions {
   signal?: AbortSignal
@@ -25,6 +27,8 @@ export interface SyncOptions {
    * 已存在的 commit 会按 id upsert，不会重复插入。
    */
   fullHistory?: boolean
+  /** 为已有但缺行数的 Gitee 提交补拉明细（开启代码明细后触发） */
+  backfillDetails?: boolean
 }
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -32,6 +36,20 @@ function throwIfAborted(signal?: AbortSignal) {
     const err = new DOMException('同步已取消', 'AbortError')
     throw err
   }
+}
+
+async function removeStaleRepos(platform: Platform, remoteIds: Set<string>) {
+  const existing = await repoRepo.all(platform)
+  const staleIds = existing.filter(r => !remoteIds.has(r.id)).map(r => r.id)
+  if (!staleIds.length) return 0
+  await Promise.all([
+    repoRepo.removeByIds(staleIds),
+    commitRepo.removeByRepoIds(staleIds),
+    cursorRepo.removeByRepoIds(platform, staleIds),
+    repoStatRepo.removeByRepoIds(staleIds),
+    db.issues.where('repoId').anyOf(staleIds).delete(),
+  ])
+  return staleIds.length
 }
 
 export async function syncPlatform(platform: Platform, options: SyncOptions = {}): Promise<void> {
@@ -69,9 +87,19 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
     throw err
   }
 
-  if (options.repoIds?.length) {
+  const filteredByIds = !!options.repoIds?.length
+  if (filteredByIds) {
     const set = new Set(options.repoIds)
     repos = repos.filter(r => set.has(r.id))
+  }
+
+  // 全量列表时清理远端已消失的仓库，避免污染统计
+  if (!filteredByIds) {
+    const removed = await removeStaleRepos(platform, new Set(repos.map(r => r.id)))
+    if (removed > 0) {
+      progress.message = `[${platform}] 已清理 ${removed} 个远端不存在的仓库`
+      sync.setProgress({ ...progress })
+    }
   }
 
   // 语言字节：仅对「新仓 / updatedAt 变化 / 本地无语言数据」补请求
@@ -128,6 +156,7 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
   const statsByRepo = new Map(existingStats.map(s => [s.repoId, s]))
 
   let giteeDetailsUsed = 0
+  let truncatedRepos = 0
 
   // 2. 逐仓库同步提交（HTTP 层已有全局池 + 间隔）
   for (let i = 0; i < reposToSync.length; i++) {
@@ -155,9 +184,11 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
           prevRepo: existingById.get(repo.id),
           cachedStat: statsByRepo.get(repo.id),
           giteeDetailBudget: detailBudget,
+          backfillDetails: options.backfillDetails === true,
         },
       )
-      giteeDetailsUsed += used
+      giteeDetailsUsed += used.detailsFetched
+      if (used.historyTruncated) truncatedRepos++
     }
     catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
@@ -175,15 +206,56 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
     // ignore
   }
 
+  const parts: string[] = ['同步完成']
+  if (giteeDetailsUsed >= MAX_GITEE_DETAILS_PER_SYNC) {
+    parts.push(`Gitee 明细已达本次上限 ${MAX_GITEE_DETAILS_PER_SYNC}，可再次同步继续补齐`)
+  }
+  if (truncatedRepos > 0) {
+    parts.push(`${truncatedRepos} 个仓库历史可能不完整，下次同步会继续向更早方向补拉`)
+  }
+
   sync.setProgress({
     platform,
     phase: 'done',
     total: reposToSync.length,
     current: reposToSync.length,
-    message: giteeDetailsUsed >= MAX_GITEE_DETAILS_PER_SYNC
-      ? `同步完成（Gitee 明细已达本次上限 ${MAX_GITEE_DETAILS_PER_SYNC}，可再次同步继续补齐）`
-      : '同步完成',
+    message: parts.join('；'),
   })
+}
+
+async function fillGiteeDetails(
+  adapter: ReturnType<typeof getAdapter>,
+  token: string,
+  repo: UnifiedRepo,
+  commits: UnifiedCommit[],
+  budget: number,
+  signal?: AbortSignal,
+): Promise<number> {
+  if (!adapter.getCommitDetail || budget <= 0 || !commits.length) return 0
+  const toFetch = commits.slice(0, budget)
+  const batch = Math.max(1, PLATFORM_CONCURRENCY.gitee)
+  const pauseMs = PLATFORM_MIN_INTERVAL_MS.gitee
+  let fetched = 0
+  for (let i = 0; i < toFetch.length; i += batch) {
+    throwIfAborted(signal)
+    const slice = toFetch.slice(i, i + batch)
+    const details = await Promise.all(
+      slice.map(c => adapter.getCommitDetail!(token, repo, c.sha, { signal })),
+    )
+    fetched += slice.length
+    slice.forEach((c, idx) => {
+      const d = details[idx]
+      if (d) {
+        c.additions = d.additions
+        c.deletions = d.deletions
+        c.filesChanged = d.filesChanged
+      }
+    })
+    if (i + batch < toFetch.length && pauseMs > 0) {
+      await new Promise<void>(r => setTimeout(r, pauseMs))
+    }
+  }
+  return fetched
 }
 
 async function syncRepo(
@@ -199,12 +271,14 @@ async function syncRepo(
     prevRepo?: UnifiedRepo
     cachedStat?: Awaited<ReturnType<typeof repoStatRepo.get>>
     giteeDetailBudget: number
+    backfillDetails: boolean
   },
-): Promise<number> {
+): Promise<{ detailsFetched: number, historyTruncated: boolean }> {
   const req = { signal }
   const cursor = fullHistory ? undefined : await cursorRepo.get(platform, repo.id)
   const since = cursor?.lastSyncedAt ?? undefined
   let detailsFetched = 0
+  let historyTruncated = cursor?.historyTruncated === true
 
   // GitHub：仓库未更新且已有周统计缓存则跳过（stats 接口易触发 secondary limit）
   if (platform === 'github' && adapter.getWeeklyStats) {
@@ -226,11 +300,12 @@ async function syncRepo(
 
   throwIfAborted(signal)
 
-  // 拉取提交列表
+  // 拉取提交列表（向前增量）
   // since 用水位线（上次成功入库的最新提交时间），不要用墙钟，
   // 否则首次同步中断后会丢历史，或漏掉同步过程中产生的提交。
-  let commits = await adapter.listCommits(token, repo, userLogin, since, req)
+  let { commits, truncated } = await adapter.listCommits(token, repo, userLogin, since, req)
   throwIfAborted(signal)
+  if (truncated) historyTruncated = true
 
   // 过滤掉库里已存在的提交（全量重拉时仍 upsert，只是少一次无意义写入）
   if (commits.length && !fullHistory) {
@@ -239,34 +314,46 @@ async function syncRepo(
     commits = commits.filter(c => !existingSet.has(c.id))
   }
 
-  // Gitee 无周聚合接口：按开关 + 本次预算决定是否逐提交拉取代码行明细
-  if (
-    platform === 'gitee'
-    && codeDetailEnabled
-    && adapter.getCommitDetail
-    && commits.length
-    && ctx.giteeDetailBudget > 0
-  ) {
-    const toFetch = commits.slice(0, ctx.giteeDetailBudget)
-    const batch = Math.max(1, PLATFORM_CONCURRENCY.gitee)
-    const pauseMs = PLATFORM_MIN_INTERVAL_MS.gitee
-    for (let i = 0; i < toFetch.length; i += batch) {
+  // 若历史曾被截断：用 until=本地最早提交 向更早方向补拉若干轮
+  if ((historyTruncated || truncated) && !fullHistory) {
+    for (let round = 0; round < MAX_HISTORY_BACKFILL_ROUNDS; round++) {
       throwIfAborted(signal)
-      const slice = toFetch.slice(i, i + batch)
-      const details = await Promise.all(
-        slice.map(c => adapter.getCommitDetail!(token, repo, c.sha, req)),
-      )
-      detailsFetched += slice.length
-      slice.forEach((c, idx) => {
-        const d = details[idx]
-        if (d) {
-          c.additions = d.additions
-          c.deletions = d.deletions
-          c.filesChanged = d.filesChanged
-        }
-      })
-      if (i + batch < toFetch.length && pauseMs > 0) {
-        await new Promise<void>(r => setTimeout(r, pauseMs))
+      const local = await db.commits.where('repoId').equals(repo.id).toArray()
+      const allKnown = [...local, ...commits]
+      if (!allKnown.length) break
+      const oldest = allKnown.reduce((acc, c) =>
+        new Date(c.authoredAt) < new Date(acc.authoredAt) ? c : acc)
+      // until 不含该时刻，减 1ms 避免重复拉到边界提交
+      const until = new Date(new Date(oldest.authoredAt).getTime() - 1).toISOString()
+      const older = await adapter.listCommits(token, repo, userLogin, undefined, { ...req, until })
+      if (!older.commits.length) {
+        historyTruncated = false
+        break
+      }
+      const knownIds = new Set(allKnown.map(c => c.id))
+      const fresh = older.commits.filter(c => !knownIds.has(c.id))
+      commits = [...commits, ...fresh]
+      historyTruncated = older.truncated
+      if (!older.truncated) break
+    }
+  }
+
+  // Gitee：按开关 + 预算拉代码行明细
+  if (platform === 'gitee' && codeDetailEnabled && adapter.getCommitDetail) {
+    let budget = ctx.giteeDetailBudget
+    if (commits.length && budget > 0) {
+      const used = await fillGiteeDetails(adapter, token, repo, commits, budget, signal)
+      detailsFetched += used
+      budget -= used
+    }
+    // 补全已入库但缺行数的提交
+    if (ctx.backfillDetails && budget > 0) {
+      const stored = await db.commits.where('repoId').equals(repo.id).toArray()
+      const missing = stored.filter(c => !c.additions && !c.deletions && !c.filesChanged)
+      if (missing.length) {
+        const used = await fillGiteeDetails(adapter, token, repo, missing, budget, signal)
+        detailsFetched += used
+        if (used) await commitRepo.bulkPut(missing.slice(0, used))
       }
     }
   }
@@ -275,7 +362,23 @@ async function syncRepo(
     await commitRepo.bulkPut(commits)
   }
 
-  // 更新游标：水位线取本次入库的最新提交 authoredAt
+  // 空结果且无历史游标：不写墙钟水位，避免跳过真实历史
+  if (!commits.length && !cursor?.lastSyncedAt && !fullHistory) {
+    // 仍记录截断状态（若有）以便下次补拉；无提交则写一条空游标标记已扫过
+    if (historyTruncated) {
+      await cursorRepo.put({
+        platform,
+        repoId: repo.id,
+        lastCommitSha: null,
+        lastSyncedAt: null,
+        etag: cursor?.etag ?? null,
+        historyTruncated: true,
+      })
+    }
+    return { detailsFetched, historyTruncated }
+  }
+
+  // 水位线取本次+历史中最新提交时间（仅用于向前增量，不代表历史完整）
   const newest = commits.reduce<UnifiedCommit | null>((acc, c) => {
     if (!acc) return c
     return new Date(c.authoredAt) > new Date(acc.authoredAt) ? c : acc
@@ -285,7 +388,10 @@ async function syncRepo(
   const watermark = [newest?.authoredAt, previousWatermark]
     .filter((v): v is string => !!v)
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
-    ?? new Date().toISOString()
+    ?? null
+
+  // 全量重拉且本轮未截断 → 清除截断标记
+  if (fullHistory && !truncated) historyTruncated = false
 
   await cursorRepo.put({
     platform,
@@ -293,9 +399,10 @@ async function syncRepo(
     lastCommitSha: newest?.sha ?? (fullHistory ? null : cursor?.lastCommitSha) ?? null,
     lastSyncedAt: watermark,
     etag: cursor?.etag ?? null,
+    historyTruncated,
   })
 
-  return detailsFetched
+  return { detailsFetched, historyTruncated }
 }
 
 export async function syncAll(options?: SyncOptions) {

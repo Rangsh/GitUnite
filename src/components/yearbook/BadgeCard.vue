@@ -7,8 +7,8 @@ const props = defineProps<{
   badge: BadgeStatus
 }>()
 
-// 徽章图片由设计资源提供，约定放在 public/badges/<id>.png
-const imgSrc = computed(() => `/badges/${props.badge.id}.png`)
+// 徽章图片：public/badges/<id>.webp（256px WebP）
+const imgSrc = computed(() => `/badges/${props.badge.id}.webp`)
 const imgFailed = ref(false)
 
 const TONE_COLORS: Record<BadgeTone, string> = {
@@ -31,29 +31,31 @@ const progressPct = computed(() => Math.round(props.badge.progress * 100))
       ? 'border-ink-200 bg-white shadow-panel hover:shadow-lift'
       : 'border-dashed border-ink-200 bg-ink-50/60'"
   >
-    <!-- 徽章图像 / 占位：图片为 1408x768 横幅，圆形奖章占满高度，按高度铺满 -->
-    <div class="relative flex h-28 w-full items-center justify-center">
+    <!-- 徽章图像：资源最长边 256px WebP；展示约 56px 高以适配 2x -->
+    <div class="relative flex h-14 w-full items-center justify-center">
       <img
         v-if="!imgFailed"
         :src="imgSrc"
         :alt="badge.name"
-        class="h-full w-auto object-contain"
+        width="256"
+        height="140"
+        class="h-14 w-auto max-w-full object-contain"
         :class="badge.earned ? 'opacity-100 drop-shadow-sm' : 'opacity-40 grayscale'"
         @error="imgFailed = true"
       />
       <component
         v-else
         :is="badge.icon"
-        :size="48"
+        :size="40"
         :stroke-width="1.6"
         :color="badge.earned ? tone : '#94a3b8'"
       />
 
       <div
         v-if="!badge.earned"
-        class="absolute right-2 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white text-ink-400 shadow"
+        class="absolute right-1 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-white text-ink-400 shadow"
       >
-        <Lock :size="12" />
+        <Lock :size="11" />
       </div>
     </div>
 

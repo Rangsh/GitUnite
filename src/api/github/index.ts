@@ -75,7 +75,7 @@ const githubAdapter: PlatformAdapter = {
     // /user/repos 覆盖自有、协作者、组织成员仓库。
     // 注：提过 PR 但不是协作者的外部仓库留到 M5 PR/Issue 统计阶段通过 Search API 补齐，
     // 避免首次同步就消耗 Search 接口限流（30 次/分钟）导致整体卡住。
-    const ownRepos = await paginateAll<GithubRepo>({
+    const { items: ownRepos } = await paginateAll<GithubRepo>({
       http: client,
       url: '/user/repos',
       perPage: 100,
@@ -113,13 +113,14 @@ const githubAdapter: PlatformAdapter = {
     return normalizeLanguageMap(data)
   },
 
-  async listCommits(token, repo, userLogin, since?, opts?): Promise<UnifiedCommit[]> {
+  async listCommits(token, repo, userLogin, since?, opts?) {
     const client = createGithubClient(token)
     const params: Record<string, unknown> = { author: userLogin }
     if (since) params.since = since
+    if (opts?.until) params.until = opts.until
     // 增量通常很少页；全量也封顶，避免异常仓库打穿配额
-    const maxPages = opts?.maxPages ?? (since ? 20 : 40)
-    const commits = await paginateAll<GithubCommit>({
+    const maxPages = opts?.maxPages ?? (since || opts?.until ? 20 : 40)
+    const { items, truncated } = await paginateAll<GithubCommit>({
       http: client,
       url: `/repos/${repo.fullName}/commits`,
       perPage: 100,
@@ -128,9 +129,10 @@ const githubAdapter: PlatformAdapter = {
       params,
     })
 
-    return commits
-      .filter(c => !!c.commit.author)
-      .map(c => mapCommit(c, repo))
+    return {
+      commits: items.filter(c => !!c.commit.author).map(c => mapCommit(c, repo)),
+      truncated,
+    }
   },
 
   async getCommitDetail(token, repo, sha, opts) {

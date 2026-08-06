@@ -46,7 +46,7 @@ export const useSyncStore = defineStore('sync', {
   actions: {
     setProgress(p: SyncProgress) {
       this.progress[p.platform] = { ...p }
-      if (p.phase === 'done' || p.phase === 'error') {
+      if (p.phase === 'done') {
         this.lastSyncedAt = new Date().toISOString()
       }
     },

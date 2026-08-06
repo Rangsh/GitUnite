@@ -116,23 +116,36 @@ export function computeYearbook(input: YearbookInput): YearbookData {
     }
   }
 
-  // GitHub 周聚合按“该年有提交的天”分摊到天
+  // GitHub 周聚合：与热力图同口径——整周行数均摊到「该仓该周有提交的天」，再只累加落在所选年的天
   const scopeRepos = filterRepos(input.repos, input.scope)
   const scopeRepoIds = new Set(scopeRepos.map(r => r.id))
+  const ghDaysByRepo = new Map<string, Set<string>>()
+  for (const c of commits) {
+    if (c.platform !== 'github') continue
+    if (!ghDaysByRepo.has(c.repoId)) ghDaysByRepo.set(c.repoId, new Set())
+    ghDaysByRepo.get(c.repoId)!.add(tz.dateKey(c.authoredAt))
+  }
   if (input.scope === 'all' || input.scope === 'github') {
     const ghStats = input.repoStats.filter(s => s.platform === 'github' && scopeRepoIds.has(s.repoId))
     for (const stat of ghStats) {
+      const repoDays = ghDaysByRepo.get(stat.repoId)
+      if (!repoDays?.size) continue
       for (const w of stat.weeks) {
         if (!w.a && !w.d) continue
         const weekStart = dayjs.unix(w.w)
         const daysInWeek: string[] = []
         for (let i = 0; i < 7; i++) {
           const key = tz.dateKey(weekStart.add(i, 'day').toDate())
-          if (key.startsWith(yearPrefix) && daySet.has(key)) daysInWeek.push(key)
+          if (repoDays.has(key)) daysInWeek.push(key)
         }
         if (daysInWeek.length === 0) continue
-        additions += w.a
-        deletions += w.d
+        const perDayA = w.a / daysInWeek.length
+        const perDayD = w.d / daysInWeek.length
+        for (const key of daysInWeek) {
+          if (!key.startsWith(yearPrefix)) continue
+          additions += perDayA
+          deletions += perDayD
+        }
       }
     }
   }
@@ -250,4 +263,24 @@ export function availableYears(commits: UnifiedCommit[], tz?: string): number[] 
     if (!Number.isNaN(y)) years.add(y)
   }
   return [...years].sort((a, b) => b - a)
+}
+
+const MONTHS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+/** 一句话年度故事，给年鉴页一点叙事感（非 AI，纯规则拼接）。 */
+export function yearbookStory(data: YearbookData): string {
+  if (!data.hasData) return `${data.year} 年还没有留下提交足迹。`
+  const parts: string[] = []
+  parts.push(`这一年你提交了 ${data.commitCount.toLocaleString('zh-CN')} 次`)
+  if (data.activeDays > 0) parts.push(`活跃 ${data.activeDays} 天`)
+  if (data.longestStreak >= 7) parts.push(`最长连击 ${data.longestStreak} 天`)
+  if (data.mostActiveMonth != null) parts.push(`${MONTHS[data.mostActiveMonth]} 最忙碌`)
+  if (data.lateNightRatio >= 0.25) parts.push('深夜码农属性拉满')
+  else if (data.mostActiveHour != null && data.mostActiveHour >= 5 && data.mostActiveHour < 9) {
+    parts.push('偏爱清晨开工')
+  }
+  if (data.newLanguages.length) parts.push(`新接触了 ${data.newLanguages.slice(0, 3).join('、')}`)
+  if (data.mostActiveWeekday != null) parts.push(`${WEEKDAYS[data.mostActiveWeekday]} 出手最多`)
+  return `${parts.join('，')}。`
 }

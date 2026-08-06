@@ -37,6 +37,11 @@ export interface CollaborationGraph {
   /** 协作者 -> 共同提交（用于双击抽屉） */
   collaboratorCommits: Map<string, UnifiedCommit[]>
   truncated: { collaborators: number }
+  /**
+   * 当前同步只拉「我」的提交，协作者节点通常为空。
+   * UI 应提示：二级协作者需额外数据源（M5），现仅为仓库关系图。
+   */
+  collaboratorsUnavailable: boolean
 }
 
 export interface CollaborationInput {
@@ -68,9 +73,9 @@ function normalize(values: number[], min: number, max: number): (v: number) => n
 }
 
 function authorKeyOf(c: UnifiedCommit, meLogin?: string | null): string | null {
-  const login = (c.authorLogin || c.authorName || '').trim()
+  // 仅信任平台 login；无 login 的 authorName 可能是显示名，不能当成协作者身份
+  const login = (c.authorLogin || '').trim()
   if (!login) return null
-  // 排除“我”（按登录名大小写不敏感；authorName 也比对，兜底）
   if (meLogin && login.toLowerCase() === meLogin.toLowerCase()) return null
   return `${c.platform}:${login.toLowerCase()}`
 }
@@ -178,6 +183,8 @@ export function computeCollaboration(input: CollaborationInput): CollaborationGr
     collaborators: visibleCollabs,
     collaboratorCommits,
     truncated: { collaborators: Math.max(0, collaborators.length - visibleCollabs.length) },
+    // 同步层只缓存当前用户提交；打开协作者开关却无人时，对用户诚实降级
+    collaboratorsUnavailable: includeCollab && collaborators.length === 0 && activeRepos.length > 0,
   }
 }
 

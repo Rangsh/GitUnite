@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
-  NCard, NSpace, NButton, NInput, NTag, NAlert, NAvatar, NPopconfirm,
+  NSpace, NButton, NInput, NTag, NAlert, NAvatar, NPopconfirm,
 } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import { Github, Gitee } from '@/components/common/PlatformIcon'
@@ -76,26 +76,35 @@ const quotaText = computed(() => (platform: Platform) => {
 </script>
 
 <template>
-  <NCard title="账户接入" size="small">
-    <NAlert type="info" :show-icon="false" class="mb-4">
-      令牌仅保存在浏览器本地存储，不会上传到任何服务器。生成令牌时请只勾选只读权限。
-    </NAlert>
-    <NSpace vertical size="large">
-      <div v-for="p in platforms" :key="p.key">
-        <div class="mb-2 flex items-center gap-2">
+  <section class="overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-panel">
+    <div class="border-b border-ink-100 px-5 py-4">
+      <h2 class="m-0 text-base font-semibold text-ink-900">账户接入</h2>
+      <p class="mt-1 text-xs text-ink-400">
+        令牌仅保存在浏览器本地。任何扩展都可能读取本机存储，请勿在不可信设备上使用。
+      </p>
+    </div>
+    <div class="space-y-5 px-5 py-4">
+      <NAlert type="info" :show-icon="false" class="!rounded-xl">
+        生成令牌时请只勾选只读权限（Contents / Metadata；需要 PR 统计时再加 Pull Requests / Issues）。
+      </NAlert>
+      <div
+        v-for="p in platforms"
+        :key="p.key"
+        class="rounded-xl border border-ink-100 bg-ink-50/50 p-4"
+      >
+        <div class="mb-3 flex items-center gap-2">
           <component :is="p.key === 'github' ? Github : Gitee" :size="20" />
-          <span class="font-medium">{{ p.label }}</span>
-          <NTag v-if="isConnected(p.key)" type="success" size="small">已连接</NTag>
-          <NTag v-else type="default" size="small">未连接</NTag>
-          <span v-if="isConnected(p.key)" class="ml-auto text-xs text-gray-400">{{ quotaText(p.key) }}</span>
+          <span class="font-medium text-ink-900">{{ p.label }}</span>
+          <NTag v-if="isConnected(p.key)" type="success" size="small" :bordered="false" class="!rounded-lg">已连接</NTag>
+          <NTag v-else type="default" size="small" :bordered="false" class="!rounded-lg">未连接</NTag>
+          <span v-if="isConnected(p.key)" class="ml-auto text-xs text-ink-400">{{ quotaText(p.key) }}</span>
         </div>
 
-        <!-- 已连接：显示用户信息 -->
-        <div v-if="isConnected(p.key)" class="flex items-center gap-3">
+        <div v-if="isConnected(p.key)" class="flex flex-wrap items-center gap-3">
           <NAvatar round :size="40" :src="user(p.key)?.avatarUrl" />
-          <div class="flex-1">
-            <div class="font-medium">{{ user(p.key)?.name || user(p.key)?.login }}</div>
-            <a :href="user(p.key)?.htmlUrl" target="_blank" class="text-xs text-gray-400 hover:underline">
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-ink-900">{{ user(p.key)?.name || user(p.key)?.login }}</div>
+            <a :href="user(p.key)?.htmlUrl" target="_blank" class="text-xs text-ink-400 hover:underline">
               @{{ user(p.key)?.login }}
             </a>
           </div>
@@ -108,7 +117,6 @@ const quotaText = computed(() => (platform: Platform) => {
           </NPopconfirm>
         </div>
 
-        <!-- 未连接：输入令牌 -->
         <NSpace v-else>
           <NInput
             v-model:value="tokenInputs[p.key]"
@@ -122,8 +130,8 @@ const quotaText = computed(() => (platform: Platform) => {
           <NButton type="primary" :loading="connecting[p.key]" @click="connect(p.key)">连接</NButton>
           <NButton tag="a" :href="p.link" target="_blank" quaternary>获取令牌</NButton>
         </NSpace>
-        <div v-if="errorMsgs[p.key]" class="mt-1 text-xs text-red-400">{{ errorMsgs[p.key] }}</div>
+        <div v-if="errorMsgs[p.key]" class="mt-1 text-xs text-red-500">{{ errorMsgs[p.key] }}</div>
       </div>
-    </NSpace>
-  </NCard>
+    </div>
+  </section>
 </template>

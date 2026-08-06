@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useMessage } from 'naive-ui'
-import { NCard, NButton, NSpace, NPopconfirm } from 'naive-ui'
+import { NButton, NPopconfirm, NText } from 'naive-ui'
+import { clearEtagCache } from '@/api/http'
 import { db } from '@/db/schema'
+import { useAnalyticsStore } from '@/stores/analytics'
 
 const message = useMessage()
 
@@ -12,23 +14,33 @@ async function clearAll() {
     db.issues.clear(),
     db.cursors.clear(),
     db.repoStats.clear(),
+    db.achievements.clear(),
+    db.users.clear(),
   ])
+  clearEtagCache()
   localStorage.removeItem('gitunite:token:github')
   localStorage.removeItem('gitunite:token:gitee')
+  useAnalyticsStore().reset()
   message.success('已清除全部本地数据，即将刷新页面')
   setTimeout(() => location.reload(), 800)
 }
 </script>
 
 <template>
-  <NCard title="危险操作" size="small" header-style="color: #d03050">
-    <NSpace>
+  <section class="overflow-hidden rounded-2xl border border-red-200/80 bg-white shadow-panel">
+    <div class="border-b border-red-100 px-5 py-4">
+      <h2 class="m-0 text-base font-semibold text-red-600">危险操作</h2>
+      <p class="mt-1 text-xs text-ink-400">
+        将删除 Token、仓库、提交、游标、周统计与成就徽章，不可恢复。
+      </p>
+    </div>
+    <div class="px-5 py-4">
       <NPopconfirm @positive-click="clearAll">
         <template #trigger>
-          <NButton type="error" ghost>清除全部本地数据</NButton>
+          <NButton type="error" ghost class="!rounded-xl">清除全部本地数据</NButton>
         </template>
-        将删除所有 Token、缓存的仓库与提交记录，不可恢复。确定继续？
+        <NText>确定清除全部本地数据？此操作不可撤销。</NText>
       </NPopconfirm>
-    </NSpace>
-  </NCard>
+    </div>
+  </section>
 </template>

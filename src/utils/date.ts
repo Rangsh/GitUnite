@@ -15,15 +15,38 @@ dayjs.extend(advancedFormat)
 
 /**
  * 返回用于统计的目标时区（IANA 名称）。
- * 传入 tzOverride 优先；空字符串 / 空白视为未设置，回退浏览器时区。
+ * 传入 tzOverride 优先；空字符串 / 空白 / 非法 IANA 回退浏览器时区。
  */
 export function resolveTimezone(tzOverride?: string): string {
-  if (tzOverride && tzOverride.trim()) return tzOverride.trim()
+  const fallback = (() => {
+    try {
+      return dayjs.tz.guess() || 'UTC'
+    }
+    catch {
+      return 'UTC'
+    }
+  })()
+  if (!tzOverride || !tzOverride.trim()) return fallback
+  const candidate = tzOverride.trim()
   try {
-    return dayjs.tz.guess() || 'UTC'
+    // Intl 对非法 IANA 会抛 RangeError
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date())
+    return candidate
   }
   catch {
-    return 'UTC'
+    return fallback
+  }
+}
+
+/** 校验 IANA 时区名是否可用 */
+export function isValidTimezone(tz: string): boolean {
+  if (!tz.trim()) return true // 空 = 自动
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz.trim() }).format(new Date())
+    return true
+  }
+  catch {
+    return false
   }
 }
 

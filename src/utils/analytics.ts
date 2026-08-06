@@ -457,7 +457,7 @@ export function computeDailyBuckets(input: AnalyticsInput): Map<string, DailyBuc
   }
 
   // GitHub 列表接口不返回逐提交行数，additions/deletions 来自 stats/contributors 周聚合。
-  // 这里把每周的行数平均分摊到该周内“有提交”的天上；无提交的周不计入，保持与活跃日历一致。
+  // 把每周行数分摊到「该仓库」在该周内有提交的天上；无该仓提交的周不计入。
   // Gitee 的提交行数已在同步时通过详情接口写入 c.additions/deletions，上面的循环已累加。
   if (input.scope === 'all' || input.scope === 'github') {
     const ghStats = input.repoStats.filter(s => s.platform === 'github' && repoIds.has(s.repoId))
@@ -468,7 +468,8 @@ export function computeDailyBuckets(input: AnalyticsInput): Map<string, DailyBuc
         const daysInWeek: string[] = []
         for (let i = 0; i < 7; i++) {
           const key = tz.dateKey(weekStart.add(i, 'day').toDate())
-          if (map.has(key) && map.get(key)!.commits.some(c => c.platform === 'github')) {
+          const bucket = map.get(key)
+          if (bucket?.commits.some(c => c.repoId === stat.repoId && c.platform === 'github')) {
             daysInWeek.push(key)
           }
         }
