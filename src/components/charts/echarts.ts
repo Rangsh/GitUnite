@@ -21,6 +21,8 @@ import {
   ToolboxComponent,
   GraphicComponent,
 } from 'echarts/components'
+// 词云图表：副作用自注册到 echarts 单例
+import 'echarts-wordcloud'
 
 use([
   CanvasRenderer,

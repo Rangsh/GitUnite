@@ -14,6 +14,19 @@ export interface RepoWeeklyStat {
   updatedAt: string
 }
 
+/**
+ * 成就徽章持久化记录（对应 PRD 3.8）。
+ * 徽章本身由提交数据实时计算，这里只持久化“首次达成时间”等本地状态，
+ * 供分享卡片选择露出（M5）以及跨会话保留达成时刻。
+ */
+export interface AchievementRecord {
+  /** 徽章 id，见 utils/badges.ts 的 BADGES */
+  id: string
+  /** 依据提交数据推算的达成日期（YYYY-MM-DD） */
+  achievedAt: string | null
+  updatedAt: string
+}
+
 export class GitUniteDB extends Dexie {
   users!: Table<UnifiedUser, string>
   repos!: Table<UnifiedRepo, string>
@@ -21,6 +34,7 @@ export class GitUniteDB extends Dexie {
   issues!: Table<UnifiedIssue, string>
   cursors!: Table<SyncCursor, string>
   repoStats!: Table<RepoWeeklyStat, string>
+  achievements!: Table<AchievementRecord, string>
 
   constructor() {
     super('GitUnite')
@@ -32,6 +46,11 @@ export class GitUniteDB extends Dexie {
       issues: 'id, repoId, platform, number, type, state, createdAt, mergedAt',
       cursors: '[platform+repoId], platform, lastSyncedAt',
       repoStats: 'repoId, platform',
+    })
+
+    // M4：成就徽章本地状态
+    this.version(2).stores({
+      achievements: 'id, achievedAt, updatedAt',
     })
   }
 }
