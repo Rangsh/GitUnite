@@ -4,7 +4,7 @@ import { PLATFORM_CONCURRENCY, PLATFORM_MIN_INTERVAL_MS } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useSyncStore, type SyncProgress } from '@/stores/sync'
 import { useUiStore } from '@/stores/ui'
-import { commitRepo, cursorRepo, repoRepo, repoStatRepo } from '@/db/repositories'
+import { commitRepo, cursorRepo, issueRepo, repoRepo, repoStatRepo } from '@/db/repositories'
 import { db } from '@/db/schema'
 
 /** 单次同步内 Gitee 代码明细最多请求数，防止长历史把账号打穿 */
@@ -202,6 +202,34 @@ export async function syncPlatform(platform: Platform, options: SyncOptions = {}
       // 单仓库失败不影响整体，记录到进度信息后继续
       progress.message = `跳过 ${repo.fullName}：${(err as Error).message}`
       sync.setProgress({ ...progress })
+    }
+  }
+
+  // 2.5 同步 PR / Issue（轻量增量只更新近期活跃仓库的提交，跳过 PR/Issue 以保护配额）
+  if (!options.recentOnly && adapter.listMyPullRequestsAndIssues) {
+    progress.phase = 'pr-issues'
+    progress.message = `[${platform}] 同步 PR / Issue…`
+    sync.setProgress({ ...progress })
+    try {
+      const issues = await adapter.listMyPullRequestsAndIssues(token, reposToSync, user.login, req)
+      throwIfAborted(options.signal)
+      // 整平台替换：先删后写放在一个事务里，失败不会清空旧数据
+      await issueRepo.replaceForPlatform(platform, issues)
+      ui.prIssueScopeMissing[platform] = false
+    }
+    catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 401 || status === 403 || status === 404) {
+        ui.prIssueScopeMissing[platform] = true
+        progress.message = `[${platform}] Token 缺少 PR/Issue 读权限，已跳过该部分统计`
+        sync.setProgress({ ...progress })
+      }
+      else {
+        // 其它错误（网络/限流重试耗尽）不阻断收尾，保留旧数据
+        progress.message = `[${platform}] PR/Issue 同步失败：${(err as Error).message}`
+        sync.setProgress({ ...progress })
+      }
     }
   }
 

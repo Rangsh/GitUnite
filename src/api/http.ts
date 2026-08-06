@@ -34,7 +34,8 @@ interface PlatformHttpOptions {
   baseURL: string
   headers?: Record<string, string>
   /** 每个请求是否附带 access_token query（Gitee 用） */
-  authStyle?: 'header' | 'query'
+  /** header=GitHub Bearer；token=Gitee Authorization: token；query=兼容旧版 query access_token */
+  authStyle?: 'header' | 'token' | 'query'
   token: string
 }
 
@@ -273,17 +274,25 @@ function withRetry(client: AxiosInstance, platform: Platform) {
 }
 
 export function createPlatformHttp(opts: PlatformHttpOptions) {
-  const client = axios.create({
-    baseURL: opts.baseURL,
-    timeout: 20_000,
-    headers: opts.authStyle === 'header'
+  const authHeaders
+    = opts.authStyle === 'header'
       ? {
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${opts.token}`,
           'X-GitHub-Api-Version': '2022-11-28',
           ...opts.headers,
         }
-      : opts.headers,
+      : opts.authStyle === 'token'
+        ? {
+            Authorization: `token ${opts.token}`,
+            ...opts.headers,
+          }
+        : opts.headers
+
+  const client = axios.create({
+    baseURL: opts.baseURL,
+    timeout: 20_000,
+    headers: authHeaders,
   })
 
   if (opts.authStyle === 'query') {

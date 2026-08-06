@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { useMessage } from 'naive-ui'
 import { NButton, NPopconfirm, NText } from 'naive-ui'
 import { clearEtagCache } from '@/api/http'
 import { db } from '@/db/schema'
 import { useAnalyticsStore } from '@/stores/analytics'
-
-const message = useMessage()
+import { useAuthStore } from '@/stores/auth'
+import { message } from '@/composables/useFeedback'
 
 async function clearAll() {
+  const auth = useAuthStore()
+  // 先走 store 断开，清空 useStorage 绑定的 Token，避免 reload 前被写回 localStorage
+  if (auth.isConnected('github')) await auth.disconnect('github')
+  if (auth.isConnected('gitee')) await auth.disconnect('gitee')
+
   await Promise.all([
     db.repos.clear(),
     db.commits.clear(),
@@ -18,8 +22,6 @@ async function clearAll() {
     db.users.clear(),
   ])
   clearEtagCache()
-  localStorage.removeItem('gitunite:token:github')
-  localStorage.removeItem('gitunite:token:gitee')
   useAnalyticsStore().reset()
   message.success('已清除全部本地数据，即将刷新页面')
   setTimeout(() => location.reload(), 800)

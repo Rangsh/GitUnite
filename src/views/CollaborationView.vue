@@ -25,7 +25,7 @@ const { start, running } = useSync()
 const { timezone } = storeToRefs(ui)
 
 const scope = ref<AnalyticsScope>('all')
-const includeCollaborators = ref(true)
+const includeCollaborators = ref(false)
 const computing = ref(false)
 
 const graph = shallowRef<CollaborationGraph | null>(null)
@@ -216,7 +216,7 @@ function firstLine(msg: string) {
                     仅仓库图
                   </NTag>
                 </template>
-                当前同步只缓存「你自己」的提交，无法推断协作者。二级节点将在后续补齐共同作者数据后可用。
+                同步默认只拉取当前用户作为 author 的提交以控制 API 配额，本地缓存中通常没有其他作者，因此协作者节点为空。仓库关系图仍可用。
               </NTooltip>
             </div>
           </div>

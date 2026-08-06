@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '提交时间轴' },
       },
       {
+        path: 'contributions',
+        name: 'contributions',
+        component: () => import('@/views/ContributionsView.vue'),
+        meta: { title: 'PR / Issue' },
+      },
+      {
         path: 'collaboration',
         name: 'collaboration',
         component: () => import('@/views/CollaborationView.vue'),

@@ -7,6 +7,7 @@ import { clearEtagCache } from '@/api/http'
 import { setRateLimit } from '@/api/rateLimit'
 import { db } from '@/db/schema'
 import { useAnalyticsStore } from '@/stores/analytics'
+import { useUiStore } from '@/stores/ui'
 
 export interface RateLimitInfo {
   limit: number
@@ -77,6 +78,8 @@ export const useAuthStore = defineStore('auth', {
         const user = await adapter.validateToken(token)
         setToken(platform, token)
         this.users[platform] = user
+        // 重新连接后清除“缺少 PR/Issue 权限”的旧标记，等下次同步重新探测
+        useUiStore().prIssueScopeMissing[platform] = false
         await this.refreshRateLimit(platform)
         return user
       }

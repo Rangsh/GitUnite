@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AccountCards from '@/components/settings/AccountCards.vue'
 import SyncOptions from '@/components/settings/SyncOptions.vue'
+import DataManagement from '@/components/settings/DataManagement.vue'
 import DangerZone from '@/components/settings/DangerZone.vue'
 import { Settings } from 'lucide-vue-next'
 </script>
@@ -19,6 +20,7 @@ import { Settings } from 'lucide-vue-next'
 
     <AccountCards />
     <SyncOptions />
+    <DataManagement />
     <DangerZone />
   </div>
 </template>

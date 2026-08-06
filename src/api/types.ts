@@ -153,6 +153,18 @@ export interface PlatformAdapter {
   ): Promise<UnifiedIssue[]>
 
   /**
+   * 批量拉取当前用户在所有仓库中的 PR / Issue。
+   * GitHub 用 Search API 跨仓库一次拉全；Gitee 逐仓循环。
+   * 失败时抛出的错误可由同步层识别为「缺少 scope」并降级引导。
+   */
+  listMyPullRequestsAndIssues?(
+    token: string,
+    repos: UnifiedRepo[],
+    userLogin: string,
+    opts?: AdapterRequestOptions,
+  ): Promise<UnifiedIssue[]>
+
+  /**
    * 获取剩余 API 配额信息。
    * 平台不支持单独查询时返回 null（如 Gitee，其配额仅能从响应头被动读取）。
    */

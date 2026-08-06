@@ -12,3 +12,20 @@ declare module '*?worker' {
   }
   export default workerConstructor
 }
+
+// papaparse 未自带类型，且项目未安装 @types/papaparse；声明用到的最小 API
+declare module 'papaparse' {
+  export interface UnparseConfig {
+    quotes?: boolean | boolean[]
+    quoteChar?: string
+    escapeChar?: string
+    delimiter?: string
+    header?: boolean
+    newline?: string
+  }
+  export function unparse(
+    data: object[] | { fields: string[], data: unknown[][] },
+    config?: UnparseConfig,
+  ): string
+}
+

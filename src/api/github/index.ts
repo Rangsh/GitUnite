@@ -191,8 +191,26 @@ const githubAdapter: PlatformAdapter = {
 
   async listPullRequestsAndIssues(token, repo, userLogin, opts): Promise<UnifiedIssue[]> {
     const client = createGithubClient(token)
-    const prs = await searchIssues(client, `repo:${repo.fullName} type:pr author:${userLogin}`, opts)
-    const issues = await searchIssues(client, `repo:${repo.fullName} type:issue author:${userLogin}`, opts)
+    const prs = await searchIssues(client, `repo:${repo.fullName} type:pr author:${userLogin}`, repo.id, opts)
+    const issues = await searchIssues(client, `repo:${repo.fullName} type:issue author:${userLogin}`, repo.id, opts)
+    return [...prs, ...issues]
+  },
+
+  async listMyPullRequestsAndIssues(token, repos, userLogin, opts): Promise<UnifiedIssue[]> {
+    const client = createGithubClient(token)
+    // 用 fullName 映射到内部 repoId；外部贡献仓库（不在 /user/repos 列表）用合成 id
+    const byFullName = new Map<string, UnifiedRepo>()
+    for (const r of repos) byFullName.set(r.fullName.toLowerCase(), r)
+    const repoIdFor = (fullName: string) => {
+      const hit = byFullName.get(fullName.toLowerCase())
+      if (hit) return hit.id
+      return `github:ext:${fullName.toLowerCase()}`
+    }
+    // Search API 单次最多 1000 条；对绝大多数个人用户足够
+    const [prs, issues] = await Promise.all([
+      searchIssues(client, `author:${userLogin} type:pr`, null, opts, repoIdFor),
+      searchIssues(client, `author:${userLogin} type:issue`, null, opts, repoIdFor),
+    ])
     return [...prs, ...issues]
   },
 
@@ -216,7 +234,9 @@ const githubAdapter: PlatformAdapter = {
 async function searchIssues(
   client: ReturnType<typeof createGithubClient>,
   q: string,
+  fixedRepoId: string | null,
   opts?: AdapterRequestOptions,
+  repoIdFor?: (fullName: string) => string,
 ): Promise<UnifiedIssue[]> {
   const all: UnifiedIssue[] = []
   for (let page = 1; page <= 10; page++) {
@@ -230,14 +250,21 @@ async function searchIssues(
         created_at: string
         closed_at: string | null
         html_url: string
+        repository_url?: string
       }>
     }>('/search/issues', { params: { q, per_page: 100, page }, signal: opts?.signal })
     const items = data.items ?? []
     for (const it of items) {
       const isPr = !!it.pull_request
+      // repository_url 形如 https://api.github.com/repos/{owner}/{repo}
+      let repoId = fixedRepoId ?? ''
+      if (!repoId && repoIdFor && it.repository_url) {
+        const m = it.repository_url.match(/\/repos\/([^/]+\/[^/]+)$/)
+        if (m) repoId = repoIdFor(m[1])
+      }
       all.push({
         id: `github:${it.html_url}`,
-        repoId: '',
+        repoId,
         platform: 'github',
         number: it.number,
         type: isPr ? 'pr' : 'issue',

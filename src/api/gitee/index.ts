@@ -166,10 +166,31 @@ const giteeAdapter: PlatformAdapter = {
   async listPullRequestsAndIssues(token, repo, userLogin, opts): Promise<UnifiedIssue[]> {
     const client = createGiteeClient(token)
     const [prs, issues] = await Promise.all([
-      paginateGiteeItems(client, `/repos/${repo.fullName}/pulls`, { creator: userLogin, state: 'all' }, opts),
-      paginateGiteeItems(client, `/repos/${repo.fullName}/issues`, { creator: userLogin, state: 'all' }, opts),
+      paginateGiteeItems(client, `/repos/${repo.fullName}/pulls`, repo.id, { creator: userLogin, state: 'all' }, opts),
+      paginateGiteeItems(client, `/repos/${repo.fullName}/issues`, repo.id, { creator: userLogin, state: 'all' }, opts),
     ])
     return [...prs, ...issues]
+  },
+
+  async listMyPullRequestsAndIssues(token, repos, userLogin, opts): Promise<UnifiedIssue[]> {
+    const client = createGiteeClient(token)
+    const all: UnifiedIssue[] = []
+    // 逐仓串行（Gitee 并发=1），避免打穿配额；外部并发池/间隔已在 http 层
+    for (const repo of repos) {
+      if (opts?.signal?.aborted) break
+      try {
+        const [prs, issues] = await Promise.all([
+          paginateGiteeItems(client, `/repos/${repo.fullName}/pulls`, repo.id, { creator: userLogin, state: 'all' }, opts),
+          // Gitee /issues 在部分版本会混入 PR，这里仍按 pulls/issues 两路分别取，与原逻辑一致
+          paginateGiteeItems(client, `/repos/${repo.fullName}/issues`, repo.id, { creator: userLogin, state: 'all' }, opts),
+        ])
+        all.push(...prs, ...issues)
+      }
+      catch {
+        // 单仓失败（无权限/404）跳过，不影响其他仓库
+      }
+    }
+    return all
   },
 
   async getRateLimit() {
@@ -182,6 +203,7 @@ const giteeAdapter: PlatformAdapter = {
 async function paginateGiteeItems(
   client: ReturnType<typeof createGiteeClient>,
   url: string,
+  repoId: string,
   params: Record<string, unknown>,
   opts?: AdapterRequestOptions,
 ): Promise<UnifiedIssue[]> {
@@ -198,19 +220,23 @@ async function paginateGiteeItems(
       merged_at?: string | null
     }>>(url, { params: { ...params, per_page: 100, page }, signal: opts?.signal })
     const items = data ?? []
-    const isPr = url.includes('/pulls')
+    const isPrEndpoint = url.includes('/pulls')
     for (const it of items) {
+      // /issues 在部分 Gitee 版本会混入 PR，避免与 /pulls 双计
+      if (!isPrEndpoint && (it.html_url.includes('/pulls/') || it.merged_at)) continue
+      const isPr = isPrEndpoint
+      const merged = isPr && (!!it.merged_at || it.state === 'merged')
       result.push({
         id: `gitee:${url}:${it.number}`,
-        repoId: '',
+        repoId,
         platform: 'gitee',
         number: it.number,
         type: isPr ? 'pr' : 'issue',
-        state: isPr && it.merged_at ? 'merged' : it.state === 'closed' ? 'closed' : 'open',
+        state: merged ? 'merged' : it.state === 'closed' ? 'closed' : 'open',
         title: it.title,
         createdAt: it.created_at,
         closedAt: it.closed_at,
-        mergedAt: it.merged_at ?? null,
+        mergedAt: it.merged_at ?? (merged ? it.closed_at : null),
         htmlUrl: it.html_url,
       })
     }

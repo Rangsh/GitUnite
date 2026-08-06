@@ -1,17 +1,18 @@
 import { defineStore } from 'pinia'
 import { markRaw, ref, shallowRef } from 'vue'
-import type { UnifiedCommit, UnifiedRepo } from '@/api/types'
+import type { UnifiedCommit, UnifiedIssue, UnifiedRepo } from '@/api/types'
 import { normalizeCommitDate } from '@/api/primaryLanguage'
-import { commitRepo, repoRepo, repoStatRepo } from '@/db/repositories'
+import { commitRepo, issueRepo, repoRepo, repoStatRepo } from '@/db/repositories'
 import type { RepoWeeklyStat } from '@/db/schema'
 
 /**
- * 分析看板的数据源：一次性把仓库、提交、周统计载入内存。
+ * 分析看板的数据源：一次性把仓库、提交、PR/Issue、周统计载入内存。
  * 大数组必须用 shallowRef + markRaw，避免深度代理卡死主线程。
  */
 export const useAnalyticsStore = defineStore('analytics', () => {
   const repos = shallowRef<UnifiedRepo[]>([])
   const commits = shallowRef<UnifiedCommit[]>([])
+  const issues = shallowRef<UnifiedIssue[]>([])
   const repoStats = shallowRef<RepoWeeklyStat[]>([])
   const loading = ref(false)
   const loadedAt = ref<number | null>(null)
@@ -52,9 +53,10 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   async function doFetch() {
     try {
-      const [r, c, s] = await Promise.all([
+      const [r, c, i, s] = await Promise.all([
         repoRepo.all(),
         commitRepo.all(),
+        issueRepo.all(),
         repoStatRepo.all(),
       ])
       await new Promise<void>(resolve => setTimeout(resolve, 0))
@@ -64,6 +66,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         ...commit,
         authoredAt: normalizeCommitDate(commit.authoredAt) || commit.authoredAt,
       })))
+      issues.value = markRaw(i)
       repoStats.value = markRaw(s)
       loadedAt.value = Date.now()
     }
@@ -79,6 +82,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   function reset() {
     repos.value = []
     commits.value = []
+    issues.value = []
     repoStats.value = []
     loadedAt.value = null
   }
@@ -86,6 +90,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   return {
     repos,
     commits,
+    issues,
     repoStats,
     loading,
     loadedAt,

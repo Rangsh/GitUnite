@@ -139,9 +139,32 @@ export function computeBasicStats(input: AnalyticsInput): BasicStats {
 
   if (input.scope === 'all' || input.scope === 'github') {
     const ghStats = input.repoStats.filter(s => s.platform === 'github' && repoIds.has(s.repoId))
+    const ghCommits = commits.filter(c => c.platform === 'github')
+    let minMs = Number.POSITIVE_INFINITY
+    let maxMs = Number.NEGATIVE_INFINITY
+    for (const c of ghCommits) {
+      const t = new Date(c.authoredAt).getTime()
+      if (Number.isFinite(t)) {
+        minMs = Math.min(minMs, t)
+        maxMs = Math.max(maxMs, t)
+      }
+    }
+    const hasRange = Number.isFinite(minMs) && Number.isFinite(maxMs)
+    // 周统计按本地已同步提交的时间窗裁剪，避免「终身行数 / 部分提交数」拉高平均变更
+    const padMs = 7 * 24 * 60 * 60 * 1000
     for (const s of ghStats) {
-      additions += s.additions
-      deletions += s.deletions
+      if (hasRange && s.weeks?.length) {
+        for (const w of s.weeks) {
+          const weekMs = w.w * 1000
+          if (weekMs < minMs - padMs || weekMs > maxMs + padMs) continue
+          additions += w.a
+          deletions += w.d
+        }
+      }
+      else {
+        additions += s.additions
+        deletions += s.deletions
+      }
     }
     const hasGithubActivity = repos.some(r => r.platform === 'github')
       || commits.some(c => c.platform === 'github')
