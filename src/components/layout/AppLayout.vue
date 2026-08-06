@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
   NConfigProvider, NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
-  NMenu, NIcon, NText, NTag, darkTheme, type GlobalThemeOverrides,
+  NMenu, NIcon, NText, NTag, NButton, NTooltip, darkTheme, type GlobalThemeOverrides,
 } from 'naive-ui'
 import {
   Award,
@@ -14,12 +14,16 @@ import {
   GitBranch,
   GitPullRequestCreateArrow,
   LayoutDashboard,
+  Monitor,
+  Moon,
   Network,
   Settings,
+  Sun,
 } from 'lucide-vue-next'
-import { useUiStore } from '@/stores/ui'
+import { useUiStore, type ThemeMode } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { useSyncStore } from '@/stores/sync'
+import SyncButton from '@/components/sync/SyncButton.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -27,11 +31,27 @@ const router = useRouter()
 const ui = useUiStore()
 const auth = useAuthStore()
 const sync = useSyncStore()
-const { isDark } = storeToRefs(ui)
+const { isDark, theme } = storeToRefs(ui)
 const { running, activeProgress, lastSyncedAt } = storeToRefs(sync)
 
 function iconOf(Icon: Component) {
   return () => h(NIcon, null, { default: () => h(Icon) })
+}
+
+const themeCycle: ThemeMode[] = ['light', 'dark', 'system']
+const themeIcon = computed(() => {
+  if (theme.value === 'dark') return Moon
+  if (theme.value === 'system') return Monitor
+  return Sun
+})
+const themeTip = computed(() => {
+  if (theme.value === 'dark') return t('settings.themeDark')
+  if (theme.value === 'system') return t('settings.themeSystem')
+  return t('settings.themeLight')
+})
+function cycleTheme() {
+  const i = themeCycle.indexOf(theme.value)
+  theme.value = themeCycle[(i + 1) % themeCycle.length]
 }
 
 const menuOptions = computed(() => [
@@ -198,7 +218,7 @@ function handleMenuSelect(key: string) {
               size="small"
               :type="c.ok ? 'success' : 'default'"
               :bordered="false"
-              class="!rounded-lg"
+              class="!rounded-lg hidden sm:inline-flex"
             >
               {{ c.label }}
             </NTag>
@@ -211,6 +231,17 @@ function handleMenuSelect(key: string) {
             >
               {{ t('layout.syncing') }}
             </NTag>
+            <NTooltip>
+              <template #trigger>
+                <NButton quaternary circle size="small" @click="cycleTheme">
+                  <component :is="themeIcon" :size="16" />
+                </NButton>
+              </template>
+              {{ themeTip }}
+            </NTooltip>
+            <div class="hidden md:block">
+              <SyncButton compact />
+            </div>
           </div>
         </NLayoutHeader>
         <NLayoutContent

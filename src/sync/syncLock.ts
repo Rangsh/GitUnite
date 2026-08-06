@@ -68,36 +68,48 @@ function acquireViaStorage(): SyncLockHandle | null {
   }
 }
 
+/**
+ * 在 lock 回调内决定是否授予，避免用 setTimeout 竞态导致「拿到锁但无人 release」。
+ */
 async function acquireViaWebLocks(): Promise<SyncLockHandle | null> {
   const locks = navigator.locks
   if (!locks?.request) return null
 
-  let releaseHold: (() => void) | undefined
-  const hold = new Promise<void>((resolve) => {
-    releaseHold = resolve
+  return await new Promise<SyncLockHandle | null>((resolve) => {
+    let settled = false
+    let releaseHold: (() => void) | undefined
+    const hold = new Promise<void>((r) => {
+      releaseHold = r
+    })
+
+    const lockDone = locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
+      if (!lock) {
+        if (!settled) {
+          settled = true
+          resolve(null)
+        }
+        return
+      }
+      if (!settled) {
+        settled = true
+        resolve({
+          release: () => {
+            releaseHold?.()
+            void lockDone
+          },
+        })
+      }
+      await hold
+    })
+
+    // request 本身失败时兜底
+    void lockDone.catch(() => {
+      if (!settled) {
+        settled = true
+        resolve(null)
+      }
+    })
   })
-
-  let granted = false
-  const lockDone = locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
-    if (!lock) return
-    granted = true
-    await hold
-  })
-
-  await Promise.resolve()
-  await new Promise<void>(r => setTimeout(r, 0))
-
-  if (!granted) {
-    void lockDone
-    return null
-  }
-
-  return {
-    release: () => {
-      releaseHold?.()
-      void lockDone
-    },
-  }
 }
 
 /** 尝试获取同步锁。拿不到表示其他标签页（或本页后台任务）正在同步。 */

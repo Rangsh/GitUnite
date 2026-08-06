@@ -8,6 +8,8 @@ import { setRateLimit } from '@/api/rateLimit'
 import { db } from '@/db/schema'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useUiStore } from '@/stores/ui'
+import { useSyncStore } from '@/stores/sync'
+import { abortActiveSync } from '@/sync/activeSync'
 
 export interface RateLimitInfo {
   limit: number
@@ -89,6 +91,10 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async disconnect(platform: Platform) {
+      // 先中止进行中的同步，避免删库后仍被写回
+      abortActiveSync()
+      useSyncStore().resetAll()
+
       clearToken(platform)
       this.users[platform] = null
       this.rateLimits[platform] = null

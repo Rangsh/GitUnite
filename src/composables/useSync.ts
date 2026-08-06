@@ -1,15 +1,14 @@
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSyncStore } from '@/stores/sync'
 import { useUiStore } from '@/stores/ui'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { isGiteeFirstSync, syncAll, syncPlatform } from '@/sync/engine'
 import { tryAcquireSyncLock } from '@/sync/syncLock'
+import { setActiveSyncController, abortActiveSync } from '@/sync/activeSync'
 import { dialog, message } from '@/composables/useFeedback'
 import { t } from '@/i18n'
 import type { Platform } from '@/api/types'
-
-const abortController = ref<AbortController | null>(null)
 
 export interface StartOptions {
   /** 静默模式：不弹 Gitee 首次提示、不弹成功/失败 toast（启动自动同步用） */
@@ -22,6 +21,8 @@ export interface StartOptions {
   /** 为缺行数的 Gitee 提交补拉明细 */
   backfillDetails?: boolean
 }
+
+export { abortActiveSync } from '@/sync/activeSync'
 
 export function useSync() {
   const syncStore = useSyncStore()
@@ -76,10 +77,11 @@ export function useSync() {
       return
     }
 
-    abortController.value = new AbortController()
+    const controller = new AbortController()
+    setActiveSyncController(controller)
     try {
       const syncOpts = {
-        signal: abortController.value.signal,
+        signal: controller.signal,
         recentOnly: options.recentOnly,
         recentDays: options.recentDays,
         fullHistory: options.fullHistory,
@@ -88,7 +90,7 @@ export function useSync() {
       if (platform) await syncPlatform(platform, syncOpts)
       else await syncAll(syncOpts)
 
-      if (!abortController.value?.signal.aborted) {
+      if (!controller.signal.aborted) {
         if (!options.silent) message.success(t('syncMsg.done'))
         // 后台刷新看板，不阻塞同步收尾；refresh 内部用 shallowRef，避免卡住路由
         void useAnalyticsStore().refresh()
@@ -108,18 +110,20 @@ export function useSync() {
         syncStore.resetAll()
         return
       }
+      // 任意未预期失败都要清掉进行中 phase，否则 SyncButton 会永久 loading
+      syncStore.resetAll()
       if (!options.silent) {
         message.error(t('syncMsg.failed', { message: (err as Error).message }))
       }
     }
     finally {
-      abortController.value = null
+      setActiveSyncController(null)
       lock.release()
     }
   }
 
   function stop() {
-    abortController.value?.abort()
+    abortActiveSync()
     message.info(t('syncMsg.stopped'))
   }
 

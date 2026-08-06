@@ -62,11 +62,65 @@ html.dark body {
   letter-spacing: -0.03em;
 }
 
+/* 面板表面：亮/暗统一走 CSS 变量，避免各页写死 bg-white 在暗色下刺眼 */
+.gu-surface {
+  background-color: var(--gu-surface);
+  border-color: var(--gu-border);
+  color: var(--gu-ink);
+}
+
 .gu-panel {
   border-radius: var(--gu-radius);
   border: 1px solid var(--gu-border);
   background: var(--gu-surface);
   box-shadow: var(--gu-shadow-panel);
+}
+
+/* 暗色下把常见的硬编码白底面板映射到 surface（渐进增强，少改各页） */
+html.dark .bg-white,
+html.dark .bg-white\/70,
+html.dark .bg-white\/80,
+html.dark .bg-white\/90 {
+  background-color: var(--gu-surface) !important;
+}
+
+html.dark .text-ink-900 {
+  color: var(--gu-ink);
+}
+
+html.dark .border-ink-200,
+html.dark .border-ink-200\/80,
+html.dark .border-ink-100 {
+  border-color: var(--gu-border);
+}
+
+html.dark .divide-ink-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--gu-border);
+}
+
+html.dark .bg-ink-50,
+html.dark .bg-ink-50\/50,
+html.dark .bg-ink-50\/60 {
+  background-color: rgba(148, 163, 184, 0.08);
+}
+
+html.dark .shadow-panel {
+  box-shadow: var(--gu-shadow-panel);
+}
+
+@keyframes gu-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: gu-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

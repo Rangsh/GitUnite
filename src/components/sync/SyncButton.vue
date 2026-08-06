@@ -6,7 +6,11 @@ import { RefreshCw } from 'lucide-vue-next'
 import { useSync } from '@/composables/useSync'
 import { useAuthStore } from '@/stores/auth'
 
-const props = defineProps<{ platform?: 'github' | 'gitee' }>()
+const props = defineProps<{
+  platform?: 'github' | 'gitee'
+  /** 顶栏等窄位：隐藏进度 Tag，按钮更紧凑 */
+  compact?: boolean
+}>()
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -29,15 +33,17 @@ const label = computed(() => {
 </script>
 
 <template>
-  <NSpace align="center">
+  <NSpace align="center" :size="props.compact ? 6 : 'medium'">
     <NButton
       type="primary"
+      :size="props.compact ? 'small' : 'medium'"
       :disabled="disabled"
       :loading="running"
+      class="!rounded-lg"
       @click="start(props.platform)"
     >
       <template #icon>
-        <RefreshCw :size="16" />
+        <RefreshCw :size="props.compact ? 14 : 16" />
       </template>
       {{ label }}
     </NButton>
@@ -45,7 +51,7 @@ const label = computed(() => {
       {{ t('common.stop') }}
     </NButton>
     <NTag
-      v-if="progress"
+      v-if="progress && !props.compact"
       :type="progress.phase === 'error' ? 'error' : progress.phase === 'done' ? 'success' : 'info'"
     >
       {{ progress.message }}
